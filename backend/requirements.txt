@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+pydantic-settings
+python-multipart
+httpx
+chromadb
+langchain
+langchain-community
+alembic
+jinja2
+python-jose
+passlib
+pytest
