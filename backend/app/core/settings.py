@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     # AI - Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "qwen3:8b"
+    OLLAMA_MODEL: str = "qwen3.5:9b"
 
     # File Storage
     UPLOAD_DIR: str = "./uploads"

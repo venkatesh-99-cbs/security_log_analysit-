@@ -15,7 +15,7 @@ Start Ollama on your machine and download the required model:
 ollama --version
 
 # Pull the model used by the settings configuration
-ollama pull qwen3:8b
+ollama pull qwen3.5:9b
 ```
 
 ### 2. Boot up the Docker Container Stack
