@@ -3,6 +3,12 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import Dashboard from './pages/Dashboard';
+import LogUpload from './pages/LogUpload';
+import Incidents from './pages/Incidents';
+import IncidentDetail from './pages/IncidentDetail';
+import AICopilot from './pages/AICopilot';
+import Reports from './pages/Reports';
+import Settings from './pages/Settings';
 import './index.css';
 
 const App = () => {
@@ -11,12 +17,12 @@ const App = () => {
       <Routes>
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Dashboard />} />
-          {/* Add other routes here */}
-          <Route path="logs" element={<div>Log Upload Placeholder</div>} />
-          <Route path="incidents" element={<div>Incident List Placeholder</div>} />
-          <Route path="copilot" element={<div>AI Copilot Placeholder</div>} />
-          <Route path="reports" element={<div>Reports Placeholder</div>} />
-          <Route path="settings" element={<div>Settings Placeholder</div>} />
+          <Route path="logs" element={<LogUpload />} />
+          <Route path="incidents" element={<Incidents />} />
+          <Route path="incidents/:id" element={<IncidentDetail />} />
+          <Route path="copilot" element={<AICopilot />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -1,34 +1,77 @@
-# Security Log Analysis Assistant
+# Security Log Analysis Assistant 🛡️
 
-## Project Purpose
-The Security Log Analysis Assistant is a production-quality, local-first platform designed for SOC (Security Operations Center) teams and Blue Teams. It enables offline analysis of security logs using local Small Language Models (SLMs) through Ollama, providing threat detection, incident correlation, and AI-powered recommendations without relying on cloud services.
+A production-quality, local-first platform designed for Security Operations Center (SOC) teams and Blue Teams. It enables offline analysis of security logs using local Small Language Models (SLMs) through Ollama, providing threat detection, incident correlation, MITRE ATT&CK mapping, and AI-powered recommendations without relying on external cloud services (ensuring zero data leaks).
 
-## Architecture Overview
-The system follows a clean architecture with a modular backend powered by FastAPI and a modern React frontend.
-- **Backend:** Modular services for parsing, detection, correlation, RAG, and AI analysis.
-- **Frontend:** SPA built with React, Vite, and Tailwind CSS.
-- **AI/ML:** Uses local Ollama instance for LLM inference and ChromaDB for vector storage (RAG).
-- **Data:** SQLite for relational data, ensuring zero-configuration local persistence.
+---
+
+## Key Features
+
+1. **Multi-Format Ingestion**: Auto-detects and parses Windows Event Logs (XML), Linux Syslogs (RFC 5424/BSD/Plain text), JSON/NDJSON streams (Zeek/Suricata), and CSV firewall/access logs.
+2. **Correlation & Threat Scoring**: Automatically correlates discrete alerts into multi-stage security incidents using sliding time-windows, source IPs, and target hosts. Calculates a threat score (0-100) based on severity and attack complexity.
+3. **MITRE ATT&CK Mapping**: Maps detected threat behaviors to standardized MITRE techniques (e.g., T1110 Brute Force, T1046 Service Discovery, T1548 Abuse Elevation Control, T1021 Remote Services, etc.).
+4. **Offline AI Copilot**: Multi-turn chat assistant powered by a local Ollama instance (`qwen3:8b`) to explain anomalies and answer security triage questions.
+5. **Retrieval-Augmented Generation (RAG)**: Integrates ChromaDB vector store to inject relevant security playbooks and encyclopedia references into AI chat contexts.
+6. **Triage Reporting**: Automatically compiles clean, print-friendly HTML incident summaries for executive handoff.
+
+---
 
 ## Technology Stack
-- **Backend:** FastAPI, SQLAlchemy, SQLite, Pydantic
-- **AI:** Ollama (Qwen3 8B), ChromaDB, LangChain
-- **Frontend:** React, Vite, Tailwind CSS, TypeScript
-- **Deployment:** Docker, Docker Compose
+
+- **Backend**: FastAPI, SQLAlchemy (SQLite), Pydantic, Alembic, Jinja2 (reporting)
+- **Vector Database**: ChromaDB (RAG search)
+- **AI Core**: Ollama (Local SLM runner with `qwen3:8b` or alternative models)
+- **Frontend**: React (Vite), TypeScript, Tailwind CSS, Recharts (visualizations), Lucide React
+- **Containerization**: Docker, Docker Compose
+
+---
+
+## System Architecture
+
+```mermaid
+graph TD
+    User([Security Analyst]) -->|Vite Client| Frontend[React SPA Client]
+    Frontend -->|API Requests| Backend[FastAPI Server]
+    
+    Backend -->|Background Tasks| IngestPipeline[Ingestion & Parser Pipeline]
+    IngestPipeline -->|SQLite Transaction| DB[(SQLite Database)]
+    IngestPipeline -->|Rule Matching| Detection[Detection Engines]
+    
+    Detection -->|Group Alerts| Correlation[Correlation Engine]
+    Correlation -->|MITRE Mapping| MITRE[MITRE ATT&CK Mapper]
+    MITRE -->|Save Incidents| DB
+    
+    Backend -->|Search Query| Chroma[(ChromaDB Vector Store)]
+    Backend -->|Inference request| Ollama[Local Ollama SLM]
+    
+    Chroma -.->|Embeddings| Ollama
+```
+
+---
 
 ## How to Run
-### Prerequisites
-- Docker & Docker Compose
-- Ollama (installed locally)
 
-### Setup
-1. Clone the repository.
-2. Ensure Ollama is running and the `qwen3:8b` model is pulled: `ollama pull qwen3:8b`.
-3. Run the application using Docker Compose:
+### Prerequisites
+- [Docker & Docker Compose](https://docs.docker.com/get-docker/)
+- [Ollama](https://ollama.com/) (installed locally)
+
+### Setup & Run
+1. Ensure Ollama is running on your host machine:
+   ```bash
+   ollama serve
+   ```
+2. Pull the target language model:
+   ```bash
+   ollama pull qwen3:8b
+   ```
+3. Run the complete application container stack:
    ```bash
    docker-compose up --build
    ```
-4. Access the frontend at `http://localhost:5173`.
+4. Access the frontend at: `http://localhost:5173`
+5. Access the interactive API docs at: `http://localhost:8000/api/v1/docs`
 
-## Folder Structure
-Refer to `docs/FOLDER_STRUCTURE.md` for a detailed breakdown of the project organization.
+---
+
+## Detailed Project Guides
+- For a comprehensive testing and validation guide, refer to: [TEST_PROJECT_GUIDE.md](file:///c:/Users/VENKATESH/OneDrive/Desktop/security_log_analysit-/TEST_PROJECT_GUIDE.md)
+- For the full folder structure layout, refer to: [docs/FOLDER_STRUCTURE.md](file:///c:/Users/VENKATESH/OneDrive/Desktop/security_log_analysit-/docs/FOLDER_STRUCTURE.md)
