@@ -69,25 +69,44 @@ export const useChat = (initialSessionId?: string) => {
     setLoading(true);
     setError(null);
 
+    // Placeholder for assistant message to append tokens dynamically
+    let currentAssistantContent = '';
+
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+
     try {
-      const response = await api.chat({
+      await api.chatStream({
         session_id: sessionId,
         message: text,
         use_rag: useRag,
+      }, {
+        onToken: (token: string) => {
+          currentAssistantContent += token;
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === 'assistant') {
+              last.content = currentAssistantContent;
+            }
+            return updated;
+          });
+        },
+        onMetadata: (ragUsed: boolean) => {
+          console.log('RAG groundings used:', ragUsed);
+        },
+        onDone: () => {
+          setLoading(false);
+          loadSessions();
+        },
+        onError: (err: string) => {
+          console.error('Stream error:', err);
+          setError(err);
+          setLoading(false);
+        }
       });
-
-      const assistantMessage: ChatMessage = {
-        role: 'assistant',
-        content: response.response,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      
-      // Refresh sessions to show updated list
-      loadSessions();
     } catch (err: any) {
       console.error('Failed to send message:', err);
-      setError(err.response?.data?.detail || 'Failed to get response from AI. Please check if Ollama is running.');
-    } finally {
+      setError(err.message || 'Failed to connect to assistant stream.');
       setLoading(false);
     }
   };

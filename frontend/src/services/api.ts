@@ -87,6 +87,76 @@ export const api = {
     return response.data;
   },
 
+  chatStream: async (
+    data: { session_id: string; message: string; use_rag?: boolean },
+    callbacks: {
+      onToken: (text: string) => void;
+      onMetadata?: (ragUsed: boolean) => void;
+      onDone: () => void;
+      onError: (error: string) => void;
+    }
+  ) => {
+    try {
+      const response = await fetch(`${API_URL}/ai/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('Response body is null');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+
+        // Save the last incomplete line back to buffer
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          try {
+            const rawJson = trimmed.substring(6);
+            const parsed = JSON.parse(rawJson);
+
+            if (parsed.event === 'metadata' && callbacks.onMetadata) {
+              callbacks.onMetadata(parsed.rag_used);
+            } else if (parsed.event === 'token') {
+              callbacks.onToken(parsed.text);
+            } else if (parsed.event === 'done') {
+              callbacks.onDone();
+              return;
+            } else if (parsed.event === 'error') {
+              callbacks.onError(parsed.message || 'Stream error occurred');
+              return;
+            }
+          } catch (e) {
+            console.warn('Failed to parse SSE line:', trimmed, e);
+          }
+        }
+      }
+      callbacks.onDone();
+    } catch (err: any) {
+      callbacks.onError(err.message || 'Network error on streaming chat');
+    }
+  },
+
   getChatSessions: async () => {
     const response = await client.get('/ai/chat/sessions');
     return response.data;
