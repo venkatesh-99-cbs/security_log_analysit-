@@ -2,12 +2,20 @@ import { useState, useEffect, useCallback } from 'react';
 import { ChatMessage } from '../types';
 import { api } from '../services/api';
 
+export interface ChatSession {
+  session_id: string;
+  last_message: string;
+  preview: string;
+  message_count: number;
+}
+
 export const useChat = (initialSessionId?: string) => {
   const [sessionId, setSessionId] = useState(initialSessionId || '');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [aiStatus, setAIStatus] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
 
   // Auto-generate session ID if not provided
   useEffect(() => {
@@ -27,6 +35,15 @@ export const useChat = (initialSessionId?: string) => {
     }
   }, [sessionId]);
 
+  const loadSessions = useCallback(async () => {
+    try {
+      const sess = await api.getChatSessions();
+      setSessions(sess);
+    } catch (err) {
+      console.error('Failed to load chat sessions:', err);
+    }
+  }, []);
+
   const fetchAIStatus = async () => {
     try {
       const status = await api.getAIStatus();
@@ -40,8 +57,9 @@ export const useChat = (initialSessionId?: string) => {
     if (sessionId) {
       loadHistory();
     }
+    loadSessions();
     fetchAIStatus();
-  }, [sessionId, loadHistory]);
+  }, [sessionId, loadHistory, loadSessions]);
 
   const sendMessage = async (text: string, useRag = true) => {
     if (!text.trim() || !sessionId || loading) return;
@@ -63,6 +81,9 @@ export const useChat = (initialSessionId?: string) => {
         content: response.response,
       };
       setMessages((prev) => [...prev, assistantMessage]);
+      
+      // Refresh sessions to show updated list
+      loadSessions();
     } catch (err: any) {
       console.error('Failed to send message:', err);
       setError(err.response?.data?.detail || 'Failed to get response from AI. Please check if Ollama is running.');
@@ -76,9 +97,38 @@ export const useChat = (initialSessionId?: string) => {
     try {
       await api.clearChatHistory(sessionId);
       setMessages([]);
+      loadSessions();
     } catch (err) {
       console.error('Failed to clear chat history:', err);
     }
+  };
+
+  const deleteSession = async (sessionIdToDelete: string) => {
+    try {
+      await api.deleteSession(sessionIdToDelete);
+      
+      // If we deleted the current session, create a new one
+      if (sessionIdToDelete === sessionId) {
+        const newId = `session_${Math.random().toString(36).substring(2, 11)}`;
+        setSessionId(newId);
+        setMessages([]);
+      }
+      
+      loadSessions();
+    } catch (err) {
+      console.error('Failed to delete session:', err);
+      throw err;
+    }
+  };
+
+  const switchSession = (newSessionId: string) => {
+    setSessionId(newSessionId);
+  };
+
+  const createNewSession = () => {
+    const id = `session_${Math.random().toString(36).substring(2, 11)}`;
+    setSessionId(id);
+    setMessages([]);
   };
 
   return {
@@ -89,7 +139,12 @@ export const useChat = (initialSessionId?: string) => {
     aiStatus,
     sendMessage,
     clearChat,
+    deleteSession,
     refreshHistory: loadHistory,
     refreshStatus: fetchAIStatus,
+    sessions,
+    switchSession,
+    createNewSession,
+    refreshSessions: loadSessions,
   };
 };

@@ -1,7 +1,8 @@
 # Folder Structure
 
 ## Root Directories
-- `backend/`: FastAPI application source code.
+
+- `backend/`: Flask application source code.
 - `frontend/`: React + Vite application source code.
 - `docs/`: System documentation.
 - `tests/`: Unit and integration tests.
@@ -14,7 +15,8 @@
 - `docker/`: Dockerfiles for various components.
 
 ## Backend Structure (`backend/app/`)
-- `api/`: FastAPI route definitions.
+
+- `api/`: Flask route definitions.
 - `core/`: Global settings, constants, and logging.
 - `database/`: DB session management and migrations.
 - `models/`: SQLAlchemy database models.
@@ -32,6 +34,7 @@
 - `utils/`: Helper functions and common utilities.
 
 ## Frontend Structure (`frontend/src/`)
+
 - `pages/`: Main application views.
 - `components/`: Reusable UI components.
 - `layouts/`: Page layout wrappers.

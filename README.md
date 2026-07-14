@@ -17,7 +17,7 @@ A production-quality, local-first platform designed for Security Operations Cent
 
 ## Technology Stack
 
-- **Backend**: FastAPI, SQLAlchemy (SQLite), Pydantic, Alembic, Jinja2 (reporting)
+- **Backend**: Flask, SQLAlchemy (SQLite), Pydantic, Alembic, Jinja2 (reporting)
 - **Vector Database**: ChromaDB (RAG search)
 - **AI Core**: Ollama (Local SLM runner with `qwen3:8b` or alternative models)
 - **Frontend**: React (Vite), TypeScript, Tailwind CSS, Recharts (visualizations), Lucide React
@@ -30,19 +30,19 @@ A production-quality, local-first platform designed for Security Operations Cent
 ```mermaid
 graph TD
     User([Security Analyst]) -->|Vite Client| Frontend[React SPA Client]
-    Frontend -->|API Requests| Backend[FastAPI Server]
-    
+    Frontend -->|API Requests| Backend[Flask Server]
+
     Backend -->|Background Tasks| IngestPipeline[Ingestion & Parser Pipeline]
     IngestPipeline -->|SQLite Transaction| DB[(SQLite Database)]
     IngestPipeline -->|Rule Matching| Detection[Detection Engines]
-    
+
     Detection -->|Group Alerts| Correlation[Correlation Engine]
     Correlation -->|MITRE Mapping| MITRE[MITRE ATT&CK Mapper]
     MITRE -->|Save Incidents| DB
-    
+
     Backend -->|Search Query| Chroma[(ChromaDB Vector Store)]
     Backend -->|Inference request| Ollama[Local Ollama SLM]
-    
+
     Chroma -.->|Embeddings| Ollama
 ```
 
@@ -51,10 +51,12 @@ graph TD
 ## How to Run
 
 ### Prerequisites
+
 - [Docker & Docker Compose](https://docs.docker.com/get-docker/)
 - [Ollama](https://ollama.com/) (installed locally)
 
 ### Setup & Run
+
 1. Ensure Ollama is running on your host machine:
    ```bash
    ollama serve
@@ -73,5 +75,8 @@ graph TD
 ---
 
 ## Detailed Project Guides
+
 - For a comprehensive testing and validation guide, refer to: [TEST_PROJECT_GUIDE.md](file:///c:/Users/VENKATESH/OneDrive/Desktop/security_log_analysit-/TEST_PROJECT_GUIDE.md)
 - For the full folder structure layout, refer to: [docs/FOLDER_STRUCTURE.md](file:///c:/Users/VENKATESH/OneDrive/Desktop/security_log_analysit-/docs/FOLDER_STRUCTURE.md)
+
+

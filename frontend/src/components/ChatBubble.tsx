@@ -6,80 +6,198 @@ interface ChatBubbleProps {
   message: ChatMessage;
 }
 
-// Simple custom markdown formatter to avoid complex libraries and guarantee correct rendering
+// Advanced markdown formatter with table support
 const formatMarkdown = (text: string) => {
   if (!text) return null;
 
   const lines = text.split('\n');
-  return lines.map((line, idx) => {
-    let content: React.ReactNode = line;
-    
-    // Check for code blocks
-    if (line.trim().startsWith('```')) {
-      return null; // Skip wrapper line, simple formatting will handle inline elements
+  const result: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Check for markdown table
+    if (i + 1 < lines.length && lines[i + 1].includes('|') && lines[i + 1].includes('-')) {
+      const tableStart = i;
+      let tableEnd = i + 1;
+      
+      // Find all table rows
+      while (tableEnd < lines.length && lines[tableEnd].includes('|')) {
+        tableEnd++;
+      }
+
+      // Parse table
+      const tableLines = lines.slice(tableStart, tableEnd);
+      const headerRow = tableLines[0].split('|').map(cell => cell.trim()).filter(cell => cell);
+      const rows = tableLines.slice(2).map(row => 
+        row.split('|').map(cell => cell.trim()).filter(cell => cell)
+      );
+
+      result.push(
+        <div key={`table-${i}`} className="my-3 overflow-x-auto">
+          <table className="border-collapse border border-slate-600 text-xs">
+            <thead>
+              <tr className="bg-slate-800">
+                {headerRow.map((header, idx) => (
+                  <th key={idx} className="border border-slate-600 px-3 py-2 font-bold text-sky-400 text-left">
+                    {parseInline(header)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIdx) => (
+                <tr key={rowIdx} className="hover:bg-slate-900/50">
+                  {row.map((cell, cellIdx) => (
+                    <td key={cellIdx} className="border border-slate-600 px-3 py-2 text-slate-300">
+                      {parseInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+
+      i = tableEnd;
+      continue;
     }
 
     // Check for headers
     if (line.startsWith('# ')) {
-      return <h1 key={idx} className="text-xl font-bold text-slate-100 mt-4 mb-2">{line.substring(2)}</h1>;
+      result.push(<h1 key={`h1-${i}`} className="text-2xl font-bold text-slate-100 mt-4 mb-3">{parseInline(line.substring(2))}</h1>);
+      i++;
+      continue;
     }
     if (line.startsWith('## ')) {
-      return <h2 key={idx} className="text-lg font-bold text-slate-100 mt-3 mb-2">{line.substring(3)}</h2>;
+      result.push(<h2 key={`h2-${i}`} className="text-xl font-bold text-slate-100 mt-3 mb-2">{parseInline(line.substring(3))}</h2>);
+      i++;
+      continue;
     }
     if (line.startsWith('### ')) {
-      return <h3 key={idx} className="text-base font-bold text-slate-200 mt-2 mb-1">{line.substring(4)}</h3>;
+      result.push(<h3 key={`h3-${i}`} className="text-lg font-bold text-slate-200 mt-2 mb-1">{parseInline(line.substring(4))}</h3>);
+      i++;
+      continue;
+    }
+
+    // Check for code block
+    if (line.trim().startsWith('```')) {
+      let codeEnd = i + 1;
+      while (codeEnd < lines.length && !lines[codeEnd].trim().startsWith('```')) {
+        codeEnd++;
+      }
+      const codeContent = lines.slice(i + 1, codeEnd).join('\n');
+      result.push(
+        <pre key={`code-${i}`} className="bg-slate-900 border border-slate-700 rounded p-3 my-3 overflow-x-auto">
+          <code className="text-xs font-mono text-sky-300">{codeContent}</code>
+        </pre>
+      );
+      i = codeEnd + 1;
+      continue;
     }
 
     // Check for list items
-    if (line.trim().startsWith('• ') || line.trim().startsWith('- ')) {
-      const cleanLine = line.trim().substring(2);
-      content = <li key={idx} className="list-disc ml-5 mb-1">{parseInline(cleanLine)}</li>;
-      return content;
+    if (line.trim().match(/^[\d+.•\-]\s/)) {
+      const listStart = i;
+      while (i < lines.length && (lines[i].trim().match(/^[\d+.•\-]\s/) || lines[i].startsWith('  '))) {
+        i++;
+      }
+
+      const listItems = lines.slice(listStart, i);
+      const isNumbered = listItems[0].trim().match(/^\d+\./);
+
+      result.push(
+        <ul key={`list-${listStart}`} className={`my-2 ${isNumbered ? 'list-decimal' : 'list-disc'} ml-6`}>
+          {listItems.map((item, idx) => {
+            const cleanItem = item.trim().replace(/^[\d+.•\-]\s/, '');
+            return (
+              <li key={idx} className="mb-1 text-slate-300">
+                {parseInline(cleanItem)}
+              </li>
+            );
+          })}
+        </ul>
+      );
+      continue;
     }
 
-    // Check for numbered lists
-    const numListMatch = line.trim().match(/^(\d+)\.\s(.*)/);
-    if (numListMatch) {
-      content = <li key={idx} className="list-decimal ml-5 mb-1">{parseInline(numListMatch[2])}</li>;
-      return content;
+    // Check for horizontal rule
+    if (line.match(/^[-_*]{3,}/)) {
+      result.push(<hr key={`hr-${i}`} className="border-t border-slate-700 my-3" />);
+      i++;
+      continue;
     }
 
-    // Check for bold text, inline code, etc.
-    return <p key={idx} className="mb-2 leading-relaxed">{parseInline(line)}</p>;
-  });
+    // Regular paragraph
+    if (line.trim()) {
+      result.push(
+        <p key={`p-${i}`} className="mb-2 leading-relaxed text-slate-300">
+          {parseInline(line)}
+        </p>
+      );
+    } else {
+      result.push(<div key={`space-${i}`} className="mb-2" />);
+    }
+
+    i++;
+  }
+
+  return result;
 };
 
 const parseInline = (text: string): React.ReactNode[] => {
-  // Regex matchers for bold (**bold** or *bold*) and code (`code`)
-  const parts = [];
+  const parts: React.ReactNode[] = [];
   let remaining = text;
-  
+  let partKey = 0;
+
+  // Replace markdown inline elements
+  const patterns = [
+    { regex: /\*\*(.*?)\*\*/g, render: (match: string) => <strong className="font-bold text-slate-100">{match}</strong> },
+    { regex: /__(.*?)__/g, render: (match: string) => <strong className="font-bold text-slate-100">{match}</strong> },
+    { regex: /\*(.*?)\*/g, render: (match: string) => <em className="italic text-slate-300">{match}</em> },
+    { regex: /_(.*?)_/g, render: (match: string) => <em className="italic text-slate-300">{match}</em> },
+    { regex: /`(.*?)`/g, render: (match: string) => <code className="bg-slate-900 border border-slate-700/60 text-sky-400 px-1.5 py-0.5 rounded text-xs font-mono">{match}</code> },
+    { regex: /\[(.*?)\]\((.*?)\)/g, render: (match: string, url: string) => <a href={url} className="text-sky-400 hover:underline" target="_blank" rel="noopener noreferrer">{match}</a> },
+  ];
+
   while (remaining.length > 0) {
-    const boldMatch = remaining.match(/(\*\*|`)(.*?)\1/);
-    if (!boldMatch) {
-      parts.push(remaining);
-      break;
+    let found = false;
+
+    for (const pattern of patterns) {
+      const match = pattern.regex.exec(remaining);
+      if (match && match.index === 0) {
+        const fullMatch = match[0];
+        const content = match[1];
+        const url = match[2];
+
+        parts.push(
+          <span key={`inline-${partKey++}`}>
+            {pattern.render(content, url)}
+          </span>
+        );
+
+        remaining = remaining.substring(fullMatch.length);
+        found = true;
+        break;
+      }
     }
 
-    const matchIndex = remaining.indexOf(boldMatch[0]);
-    if (matchIndex > 0) {
-      parts.push(remaining.substring(0, matchIndex));
+    if (!found) {
+      const nextMatch = patterns.reduce((min, pattern) => {
+        const match = pattern.regex.exec(remaining);
+        return !match ? min : match.index < min ? match.index : min;
+      }, remaining.length);
+
+      if (nextMatch > 0) {
+        parts.push(remaining.substring(0, nextMatch));
+        remaining = remaining.substring(nextMatch);
+      } else {
+        parts.push(remaining);
+        remaining = '';
+      }
     }
-
-    const type = boldMatch[1];
-    const matchContent = boldMatch[2];
-
-    if (type === '**') {
-      parts.push(<strong key={remaining.length} className="font-bold text-slate-100">{matchContent}</strong>);
-    } else if (type === '`') {
-      parts.push(
-        <code key={remaining.length} className="bg-slate-900 border border-slate-700/60 text-sky-400 px-1.5 py-0.5 rounded text-xs font-mono">
-          {matchContent}
-        </code>
-      );
-    }
-
-    remaining = remaining.substring(matchIndex + boldMatch[0].length);
   }
 
   return parts;
@@ -91,7 +209,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
   return (
     <div className={`flex gap-3 w-full animate-fade-in ${isAssistant ? 'justify-start' : 'justify-end'}`}>
       {isAssistant && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center">
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mt-1">
           <Bot size={16} />
         </div>
       )}
@@ -101,14 +219,14 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
           <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
         )}
         {isAssistant && (
-          <div className="prose-dark font-sans text-sm">
+          <div className="prose-dark text-sm space-y-2">
             {formatMarkdown(message.content)}
           </div>
         )}
       </div>
 
       {!isAssistant && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-slate-800 border border-slate-700/60 text-slate-400 flex items-center justify-center">
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-slate-800 border border-slate-700/60 text-slate-400 flex items-center justify-center mt-1">
           <User size={16} />
         </div>
       )}

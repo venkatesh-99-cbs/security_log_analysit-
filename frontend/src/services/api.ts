@@ -87,6 +87,11 @@ export const api = {
     return response.data;
   },
 
+  getChatSessions: async () => {
+    const response = await client.get('/ai/chat/sessions');
+    return response.data;
+  },
+
   getChatHistory: async (sessionId: string, limit?: number) => {
     const response = await client.get(`/ai/chat/${sessionId}/history`, { params: { limit } });
     return response.data;
@@ -97,13 +102,40 @@ export const api = {
     return response.data;
   },
 
+  deleteSession: async (sessionId: string) => {
+    const response = await client.delete(`/ai/chat/${sessionId}`);
+    return response.data;
+  },
+
   getAIStatus: async () => {
     const response = await client.get('/ai/status');
     return response.data;
   },
 
+  updateAISettings: async (data: { model: string }) => {
+    const response = await client.post('/ai/settings', data);
+    return response.data;
+  },
+
   ingestKnowledge: async () => {
     const response = await client.post('/ai/rag/ingest');
+    return response.data;
+  },
+
+  addKnowledge: async (data: { title: string; content: string; source?: string; category?: string }) => {
+    const response = await client.post('/ai/rag/add', data);
+    return response.data;
+  },
+
+  uploadKnowledgeFile: async (file: File, data: { title?: string; source?: string; category?: string }) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (data.title) formData.append('title', data.title);
+    if (data.source) formData.append('source', data.source);
+    if (data.category) formData.append('category', data.category);
+    const response = await client.post('/ai/rag/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 
@@ -115,6 +147,11 @@ export const api = {
 
   getReports: async (params?: { skip?: number; limit?: number }) => {
     const response = await client.get('/reports/', { params });
+    return response.data;
+  },
+
+  deleteReport: async (id: number) => {
+    const response = await client.delete(`/reports/${id}`);
     return response.data;
   },
 

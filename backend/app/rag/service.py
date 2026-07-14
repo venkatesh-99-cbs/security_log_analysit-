@@ -29,34 +29,43 @@ def _get_chroma_client() -> chromadb.ClientAPI:
 
 
 class EmbeddingService:
-    """Generates text embeddings via Ollama's /api/embeddings endpoint."""
+    """Generates text embeddings via Ollama's /api/embeddings endpoint using nomic-embed-text."""
 
     def __init__(self):
         import httpx
         self._httpx = httpx
         self.base_url = settings.OLLAMA_BASE_URL.rstrip("/")
-        self.model = settings.OLLAMA_MODEL
+        self.model = settings.OLLAMA_EMBEDDING_MODEL
+        logger.info("EmbeddingService initialized with model: %s", self.model)
 
     def get_embeddings(self, text: str) -> List[float]:
-        """Synchronous embedding call (used by ChromaDB embedding function)."""
+        """Synchronous embedding call using nomic-embed-text."""
+        if not text or not text.strip():
+            logger.warning("Empty text for embedding, using fallback vector")
+            return [0.0] * 768  # nomic-embed-text outputs 768-dim vectors
+        
         try:
-            with self._httpx.Client(timeout=30) as client:
+            with self._httpx.Client(timeout=60) as client:
                 resp = client.post(
                     f"{self.base_url}/api/embeddings",
-                    json={"model": self.model, "prompt": text},
+                    json={"model": self.model, "prompt": text.strip()},
+                    timeout=60,
                 )
                 resp.raise_for_status()
-                return resp.json().get("embedding", [])
+                embedding = resp.json().get("embedding", [])
+                if isinstance(embedding, list) and embedding:
+                    return embedding
         except Exception as exc:
-            logger.warning("Embedding failed, using empty vector: %s", exc)
-            return []
+            logger.warning("Embedding failed for model %s: %s. Using fallback vector.", self.model, exc)
+        
+        return [0.0] * 768
 
     def get_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
         return [self.get_embeddings(t) for t in texts]
 
 
 class OllamaEmbeddingFunction(chromadb.EmbeddingFunction):
-    """ChromaDB-compatible embedding function backed by Ollama."""
+    """ChromaDB-compatible embedding function backed by Ollama nomic-embed-text."""
 
     def __init__(self):
         self._service = EmbeddingService()
@@ -77,7 +86,7 @@ class VectorStoreService:
                 embedding_function=self._embedding_fn,
                 metadata={"hnsw:space": "cosine"},
             )
-            logger.info("ChromaDB collection '%s' ready.", COLLECTION_NAME)
+            logger.info("ChromaDB collection '%s' ready with nomic-embed-text embeddings.", COLLECTION_NAME)
         except Exception as exc:
             logger.error("VectorStoreService init failed: %s", exc)
             self._collection = None
@@ -90,6 +99,7 @@ class VectorStoreService:
     ) -> bool:
         """Add documents to the vector store."""
         if self._collection is None:
+            logger.warning("Collection is None, cannot add documents")
             return False
         if not documents:
             return True
@@ -113,25 +123,37 @@ class VectorStoreService:
         n_results: int = 5,
         where: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
-        """Query the vector store and return top-k results."""
+        """Query the vector store and return top-k results with better ranking."""
         if self._collection is None:
             return []
         try:
+            # Request more results internally, then filter by quality
+            internal_k = min(n_results * 2, max(self._collection.count() or 5, 1))
+            
             kwargs: Dict[str, Any] = {
                 "query_texts": [query_text],
-                "n_results": min(n_results, self._collection.count() or 1),
+                "n_results": internal_k,
                 "include": ["documents", "metadatas", "distances"],
             }
             if where:
                 kwargs["where"] = where
+            
             results = self._collection.query(**kwargs)
             docs = results.get("documents", [[]])[0]
             metas = results.get("metadatas", [[]])[0]
             dists = results.get("distances", [[]])[0]
-            return [
-                {"document": doc, "metadata": meta, "distance": dist}
-                for doc, meta, dist in zip(docs, metas, dists)
-            ]
+            
+            # Filter and sort by distance (lower is better for cosine)
+            ranked = sorted(
+                [
+                    {"document": doc, "metadata": meta, "distance": dist}
+                    for doc, meta, dist in zip(docs, metas, dists)
+                    if dist < 1.0  # Only include reasonably similar results
+                ],
+                key=lambda x: x["distance"]
+            )
+            
+            return ranked[:n_results]
         except Exception as exc:
             logger.error("VectorStore query failed: %s", exc)
             return []
@@ -170,13 +192,36 @@ class RAGQueryService:
         results = self._store.query(query, n_results=n_results)
         if not results:
             return ""
+        
         parts = []
         for i, r in enumerate(results, 1):
             doc = r.get("document", "")
             meta = r.get("metadata", {})
+            distance = r.get("distance", 0)
             source = meta.get("source", meta.get("title", f"Document {i}"))
-            parts.append(f"[{i}] **{source}**\n{doc}")
+            category = meta.get("category", "reference")
+            
+            # Truncate very long documents for performance
+            if len(doc) > 500:
+                doc = doc[:500] + "..."
+            
+            # Include relevance indicator
+            relevance = "high" if distance < 0.3 else "medium" if distance < 0.6 else "low"
+            parts.append(f"[{i}] **{source}** ({category}, {relevance} relevance)\n{doc}")
+        
         return "\n\n".join(parts)
+
+    def add_document(self, title: str, content: str, source: str = "User Upload", category: str = "custom") -> int:
+        """Add a single user-provided knowledge document to the vector store."""
+        if not title or not content:
+            return 0
+        doc_id = str(uuid.uuid4())
+        success = self._store.add_documents(
+            [content],
+            [{"title": title, "source": source, "category": category}],
+            [doc_id],
+        )
+        return 1 if success else 0
 
     def ingest_security_knowledge(self) -> int:
         """Ingest built-in security knowledge into the vector store."""

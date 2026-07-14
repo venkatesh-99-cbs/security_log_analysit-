@@ -3,152 +3,170 @@ Incidents API — CRUD, AI analysis trigger, status update.
 """
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from flask import Blueprint, request, jsonify, abort
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database.session import get_db
+from ..database.session import get_db_session
 from ..models.base import AIAnalysis, Incident, MitreMapping, SecurityLog
-from ..schemas import schemas
 from ..ai.ollama_client import IncidentAnalyzer
 
-router = APIRouter()
+router = Blueprint("incidents", __name__)
 _analyzer = IncidentAnalyzer()
 
 
-@router.get("/")
-def get_incidents(
-    skip: int = 0,
-    limit: int = 50,
-    status: Optional[str] = Query(None),
-    severity: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-):
-    """List incidents with optional filtering."""
-    q = db.query(Incident)
-    if status:
-        q = q.filter(Incident.status == status)
-    if severity:
-        q = q.filter(Incident.severity == severity)
-    incidents = q.order_by(Incident.created_at.desc()).offset(skip).limit(limit).all()
-
-    total = db.query(func.count(Incident.id)).scalar() or 0
-
-    return {
-        "total": total,
-        "items": [_serialize_incident(inc, db) for inc in incidents],
-    }
+def _to_int(value: Optional[str], default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
-@router.get("/stats")
-def get_incident_stats(db: Session = Depends(get_db)):
-    """Return incident counts for the dashboard."""
-    total = db.query(func.count(Incident.id)).scalar() or 0
-    open_count = (
-        db.query(func.count(Incident.id))
-        .filter(Incident.status == "open")
-        .scalar() or 0
-    )
-    severity_dist = (
-        db.query(Incident.severity, func.count(Incident.id))
-        .group_by(Incident.severity)
-        .all()
-    )
-    return {
-        "total": total,
-        "open": open_count,
-        "severity_distribution": {row[0]: row[1] for row in severity_dist},
-    }
+@router.route("/", methods=["GET"])
+def get_incidents():
+    skip = _to_int(request.args.get("skip"), 0)
+    limit = _to_int(request.args.get("limit"), 50)
+    status = request.args.get("status")
+    severity = request.args.get("severity")
+
+    db = get_db_session()
+    try:
+        q = db.query(Incident)
+        if status:
+            q = q.filter(Incident.status == status)
+        if severity:
+            q = q.filter(Incident.severity == severity)
+        incidents = q.order_by(Incident.created_at.desc()).offset(skip).limit(limit).all()
+
+        total = db.query(func.count(Incident.id)).scalar() or 0
+        return jsonify({
+            "total": total,
+            "items": [_serialize_incident(inc, db) for inc in incidents],
+        })
+    finally:
+        db.close()
 
 
-@router.get("/{incident_id}")
-def get_incident(incident_id: int, db: Session = Depends(get_db)):
-    """Get a single incident with MITRE mappings and analyses."""
-    inc = db.query(Incident).filter(Incident.id == incident_id).first()
-    if not inc:
-        raise HTTPException(status_code=404, detail="Incident not found")
-    return _serialize_incident(inc, db, include_analyses=True, include_logs=True)
+@router.route("/stats", methods=["GET"])
+def get_incident_stats():
+    db = get_db_session()
+    try:
+        total = db.query(func.count(Incident.id)).scalar() or 0
+        open_count = (
+            db.query(func.count(Incident.id))
+            .filter(Incident.status == "open")
+            .scalar() or 0
+        )
+        severity_dist = (
+            db.query(Incident.severity, func.count(Incident.id))
+            .group_by(Incident.severity)
+            .all()
+        )
+        return jsonify({
+            "total": total,
+            "open": open_count,
+            "severity_distribution": {row[0]: row[1] for row in severity_dist},
+        })
+    finally:
+        db.close()
 
 
-@router.patch("/{incident_id}")
-def update_incident(
-    incident_id: int,
-    status: Optional[str] = None,
-    severity: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    """Update incident status or severity."""
-    inc = db.query(Incident).filter(Incident.id == incident_id).first()
-    if not inc:
-        raise HTTPException(status_code=404, detail="Incident not found")
-    if status:
-        valid_statuses = {"open", "in_progress", "resolved", "closed"}
-        if status not in valid_statuses:
-            raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
-        inc.status = status
-    if severity:
-        valid_severities = {"info", "low", "medium", "high", "critical"}
-        if severity not in valid_severities:
-            raise HTTPException(status_code=400, detail=f"Invalid severity.")
-        inc.severity = severity
-    from datetime import datetime
-    inc.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(inc)
-    return _serialize_incident(inc, db)
+@router.route("/<int:incident_id>", methods=["GET"])
+def get_incident(incident_id: int):
+    db = get_db_session()
+    try:
+        inc = db.query(Incident).filter(Incident.id == incident_id).first()
+        if not inc:
+            abort(404, "Incident not found")
+        return jsonify(_serialize_incident(inc, db, include_analyses=True, include_logs=True))
+    finally:
+        db.close()
 
 
-@router.post("/{incident_id}/analyze")
-async def analyze_incident(incident_id: int, db: Session = Depends(get_db)):
-    """Trigger AI analysis for an incident."""
-    inc = db.query(Incident).filter(Incident.id == incident_id).first()
-    if not inc:
-        raise HTTPException(status_code=404, detail="Incident not found")
+@router.route("/<int:incident_id>", methods=["PATCH"])
+def update_incident(incident_id: int):
+    payload = request.get_json(silent=True) or {}
+    status = payload.get("status") or request.args.get("status")
+    severity = payload.get("severity") or request.args.get("severity")
 
-    mitre = db.query(MitreMapping).filter(MitreMapping.incident_id == incident_id).all()
-    log_count = (
-        db.query(func.count(SecurityLog.id))
-        .join(SecurityLog.file)
-        .scalar() or 0
-    )
+    db = get_db_session()
+    try:
+        inc = db.query(Incident).filter(Incident.id == incident_id).first()
+        if not inc:
+            abort(404, "Incident not found")
+        if status:
+            valid_statuses = {"open", "in_progress", "resolved", "closed"}
+            if status not in valid_statuses:
+                abort(400, f"Invalid status. Must be one of: {valid_statuses}")
+            inc.status = status
+        if severity:
+            valid_severities = {"info", "low", "medium", "high", "critical"}
+            if severity not in valid_severities:
+                abort(400, "Invalid severity.")
+            inc.severity = severity
+        from datetime import datetime
+        inc.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(inc)
+        return jsonify(_serialize_incident(inc, db))
+    finally:
+        db.close()
 
-    incident_data = {
-        "title": inc.title,
-        "severity": inc.severity,
-        "description": inc.description,
-        "source_ip": getattr(inc, "source_ip", "unknown"),
-        "threat_score": getattr(inc, "threat_score", 0),
-        "log_count": log_count,
-        "mitre_mappings": [
-            {
-                "technique_id": m.technique_id,
-                "technique_name": m.technique_name,
-                "tactic": m.tactic,
-            }
-            for m in mitre
-        ],
-    }
 
-    analysis_text = await _analyzer.analyze_incident(incident_data)
+@router.route("/<int:incident_id>/analyze", methods=["POST"])
+def analyze_incident(incident_id: int):
+    db = get_db_session()
+    try:
+        inc = db.query(Incident).filter(Incident.id == incident_id).first()
+        if not inc:
+            abort(404, "Incident not found")
 
-    analysis = AIAnalysis(
-        incident_id=incident_id,
-        query=f"Analyze incident: {inc.title}",
-        response=analysis_text,
-        analysis_type="incident_analysis",
-    )
-    db.add(analysis)
-    db.commit()
-    db.refresh(analysis)
+        mitre = db.query(MitreMapping).filter(MitreMapping.incident_id == incident_id).all()
+        log_count = (
+            db.query(func.count(SecurityLog.id))
+            .join(SecurityLog.file)
+            .scalar() or 0
+        )
 
-    return {
-        "id": analysis.id,
-        "incident_id": analysis.incident_id,
-        "query": analysis.query,
-        "response": analysis.response,
-        "analysis_type": analysis.analysis_type,
-        "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
-    }
+        incident_data = {
+            "title": inc.title,
+            "severity": inc.severity,
+            "description": inc.description,
+            "source_ip": getattr(inc, "source_ip", "unknown"),
+            "threat_score": getattr(inc, "threat_score", 0),
+            "log_count": log_count,
+            "mitre_mappings": [
+                {
+                    "technique_id": m.technique_id,
+                    "technique_name": m.technique_name,
+                    "tactic": m.tactic,
+                }
+                for m in mitre
+            ],
+        }
+
+        analysis_text = _analyzer.analyze_incident(incident_data)
+
+        analysis = AIAnalysis(
+            incident_id=incident_id,
+            query=f"Analyze incident: {inc.title}",
+            response=analysis_text,
+            analysis_type="incident_analysis",
+        )
+        db.add(analysis)
+        db.commit()
+        db.refresh(analysis)
+
+        return jsonify({
+            "id": analysis.id,
+            "incident_id": analysis.incident_id,
+            "query": analysis.query,
+            "response": analysis.response,
+            "analysis_type": analysis.analysis_type,
+            "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
+        })
+    finally:
+        db.close()
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -53,11 +53,13 @@ const Dashboard: React.FC = () => {
   const filesProcessing = logStats?.files_processing || 0;
 
   // Pie chart data
-  const pieData = Object.entries(logStats?.severity_breakdown || {}).map(([key, value]) => ({
-    name: key.toUpperCase(),
-    value,
-    color: (SEVERITY_COLORS as any)[key] || '#64748b',
-  })).filter((d) => d.value > 0);
+  const pieData = Object.entries(logStats?.severity_breakdown || {})
+    .map(([key, value]) => ({
+      name: key.toUpperCase(),
+      value: Number(value) || 0,
+      color: (SEVERITY_COLORS as Record<string, string>)[key] || '#64748b',
+    }))
+    .filter((d) => d.value > 0);
 
   // Fallback if empty
   const hasPieData = pieData.length > 0;

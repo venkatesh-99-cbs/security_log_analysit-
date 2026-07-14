@@ -1,9 +1,8 @@
-fastapi
-uvicorn
+Flask
+Flask-Cors
 sqlalchemy
 pydantic
 pydantic-settings
-python-multipart
 httpx
 chromadb
 langchain

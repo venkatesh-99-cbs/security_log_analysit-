@@ -1,15 +1,14 @@
 """
 Background Processing Pipeline — orchestrates file parsing, detection, and correlation.
 """
-import asyncio
 import logging
 import os
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy.orm import Session
-
 from ..core.settings import settings
+from ..database.session import get_db_session
 from ..models.base import SecurityLog, Incident, MitreMapping, UploadedFile
 from ..parsers import parse_log_file
 from ..detection import DetectionOrchestrator
@@ -18,7 +17,7 @@ from ..correlation.engine import CorrelationEngine
 logger = logging.getLogger(__name__)
 
 
-async def process_log_file(file_id: int, db: Session) -> Dict[str, Any]:
+def process_log_file(file_id: int) -> Dict[str, Any]:
     """
     Main background pipeline:
     1. Load file from disk
@@ -29,29 +28,28 @@ async def process_log_file(file_id: int, db: Session) -> Dict[str, Any]:
 
     Returns summary dict.
     """
-    file_record: Optional[UploadedFile] = db.query(UploadedFile).filter(
-        UploadedFile.id == file_id
-    ).first()
-
-    if not file_record:
-        logger.error("File record %d not found.", file_id)
-        return {"error": "File record not found"}
-
-    # Mark as processing
-    file_record.status = "processing"
-    db.commit()
-
-    summary = {
-        "file_id": file_id,
-        "filename": file_record.filename,
-        "logs_parsed": 0,
-        "alerts_detected": 0,
-        "incidents_created": 0,
-        "status": "failed",
-    }
-
+    db = get_db_session()
     try:
-        # --- Step 1: Read file ---
+        file_record: Optional[UploadedFile] = db.query(UploadedFile).filter(
+            UploadedFile.id == file_id
+        ).first()
+
+        if not file_record:
+            logger.error("File record %d not found.", file_id)
+            return {"error": "File record not found"}
+
+        file_record.status = "processing"
+        db.commit()
+
+        summary = {
+            "file_id": file_id,
+            "filename": file_record.filename,
+            "logs_parsed": 0,
+            "alerts_detected": 0,
+            "incidents_created": 0,
+            "status": "failed",
+        }
+
         filepath = file_record.filepath
         if not filepath or not os.path.exists(filepath):
             raise FileNotFoundError(f"File not found: {filepath}")
@@ -61,12 +59,9 @@ async def process_log_file(file_id: int, db: Session) -> Dict[str, Any]:
 
         logger.info("Processing file %s (%d chars)", file_record.filename, len(raw_data))
 
-        # --- Step 2: Parse ---
         parsed_entries = parse_log_file(raw_data, filename=file_record.filename)
         logger.info("Parsed %d log entries from %s", len(parsed_entries), file_record.filename)
 
-        # Save logs to DB in batches
-        log_records: List[SecurityLog] = []
         for entry in parsed_entries:
             ts = entry.get("timestamp")
             if isinstance(ts, str):
@@ -87,18 +82,14 @@ async def process_log_file(file_id: int, db: Session) -> Dict[str, Any]:
                 raw_data=entry.get("raw_data"),
             )
             db.add(log_record)
-            log_records.append(log_record)
 
-            # Batch commit every 500 records
-            if len(log_records) % 500 == 0:
+            if len(db.new) % 500 == 0:
                 db.commit()
-                # Refresh IDs
                 db.flush()
 
         db.commit()
         db.refresh(file_record)
 
-        # Reload with IDs
         saved_logs = db.query(SecurityLog).filter(SecurityLog.file_id == file_id).all()
         log_dicts = [
             {
@@ -114,13 +105,11 @@ async def process_log_file(file_id: int, db: Session) -> Dict[str, Any]:
         ]
         summary["logs_parsed"] = len(saved_logs)
 
-        # --- Step 3: Detection ---
         orchestrator = DetectionOrchestrator()
         alerts = orchestrator.run_all(log_dicts)
         logger.info("Detected %d alerts", len(alerts))
         summary["alerts_detected"] = len(alerts)
 
-        # --- Step 4: Correlation ---
         correlation_engine = CorrelationEngine()
         incidents_data = correlation_engine.correlate(log_dicts, alerts)
         logger.info("Correlated %d incidents", len(incidents_data))
@@ -135,9 +124,8 @@ async def process_log_file(file_id: int, db: Session) -> Dict[str, Any]:
                 updated_at=datetime.utcnow(),
             )
             db.add(incident)
-            db.flush()  # Get incident.id
+            db.flush()
 
-            # Save MITRE mappings
             for mapping in inc_data.get("mitre_mappings", []):
                 mitre = MitreMapping(
                     incident_id=incident.id,
@@ -150,19 +138,20 @@ async def process_log_file(file_id: int, db: Session) -> Dict[str, Any]:
         db.commit()
         summary["incidents_created"] = len(incidents_data)
 
-        # --- Step 5: Update file status ---
         file_record.status = "processed"
         db.commit()
         summary["status"] = "success"
         logger.info("Pipeline complete for file %d: %s", file_id, summary)
-
     except Exception as exc:
         logger.error("Pipeline failed for file %d: %s", file_id, exc, exc_info=True)
         try:
-            file_record.status = "failed"
-            db.commit()
+            if file_record is not None:
+                file_record.status = "failed"
+                db.commit()
         except Exception:
             pass
-        summary["error"] = str(exc)
+        summary = {"error": str(exc)}
+    finally:
+        db.close()
 
     return summary

@@ -10,13 +10,17 @@ import {
   Calendar,
   AlertTriangle,
   CheckCircle,
-  FileCheck
+  FileCheck,
+  Trash2,
+  AlertCircle
 } from 'lucide-react';
 
 const Reports: React.FC = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [deleting, setDeleting] = useState<number | null>(null);
+  const [downloading, setDownloading] = useState<number | null>(null);
   const [newReportTitle, setNewReportTitle] = useState('Executive Incident Report');
   const [severityFilter, setSeverityFilter] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -28,6 +32,7 @@ const Reports: React.FC = () => {
       setReports(response);
     } catch (err) {
       console.error('Failed to fetch reports list:', err);
+      setFeedback({ type: 'error', msg: 'Failed to load reports' });
     } finally {
       setLoading(false);
     }
@@ -62,6 +67,54 @@ const Reports: React.FC = () => {
       });
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleDelete = async (reportId: number, reportTitle: string) => {
+    if (!window.confirm(`Delete report "${reportTitle}"? This cannot be undone.`)) return;
+
+    setDeleting(reportId);
+    try {
+      await api.deleteReport(reportId);
+      setFeedback({ type: 'success', msg: 'Report deleted successfully.' });
+      await fetchReports();
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err: any) {
+      console.error('Failed to delete report:', err);
+      setFeedback({ 
+        type: 'error', 
+        msg: err.response?.data?.detail || 'Failed to delete report.' 
+      });
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleDownload = async (reportId: number, reportTitle: string) => {
+    setDownloading(reportId);
+    try {
+      const downloadUrl = api.getDownloadReportUrl(reportId);
+      
+      // Create a temporary link and click it
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `SOC_Report_${reportTitle.replace(/\s+/g, '_')}_${reportId}.html`;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setFeedback({ type: 'success', msg: 'Report download started.' });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err: any) {
+      console.error('Failed to download report:', err);
+      setFeedback({ 
+        type: 'error', 
+        msg: 'Download failed. The site was not available or the file could not be found.' 
+      });
+    } finally {
+      setDownloading(null);
     }
   };
 
@@ -181,35 +234,60 @@ const Reports: React.FC = () => {
                 No reports compiled in the archive yet.
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 max-h-96 overflow-y-auto">
                 {reports.map((report) => (
                   <div 
                     key={report.id}
                     className="p-4 bg-slate-950 border border-slate-800/80 hover:border-slate-700/60 rounded-xl flex items-center justify-between transition-all"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-sky-400">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-sky-400 flex-shrink-0">
                         <FileText size={20} />
                       </div>
-                      <div>
-                        <h4 className="font-bold text-slate-200 text-sm">{report.title}</h4>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-slate-200 text-sm truncate">{report.title}</h4>
                         <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-1 font-mono">
                           <span className="flex items-center gap-1">
                             <Calendar size={10} />
                             {formatDate(report.created_at)}
                           </span>
                           <span>Scope: {report.report_type.toUpperCase()}</span>
+                          {!report.exists && (
+                            <span className="flex items-center gap-1 text-red-400">
+                              <AlertCircle size={10} />
+                              File Missing
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    <a 
-                      href={api.getDownloadReportUrl(report.id)}
-                      download
-                      className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-sky-400 border border-transparent hover:border-slate-700/60 transition-all flex items-center gap-1 text-xs font-semibold"
-                    >
-                      <Download size={14} /> Download HTML
-                    </a>
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                      <button
+                        onClick={() => handleDownload(report.id, report.title)}
+                        disabled={downloading === report.id || !report.exists}
+                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-sky-400 border border-transparent hover:border-slate-700/60 transition-all flex items-center gap-1 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={report.exists ? "Download report" : "File not found"}
+                      >
+                        {downloading === report.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Download size={14} />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(report.id, report.title)}
+                        disabled={deleting === report.id}
+                        className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-red-400 border border-transparent hover:border-slate-700/60 transition-all flex items-center gap-1 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete report"
+                      >
+                        {deleting === report.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
