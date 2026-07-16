@@ -1,10 +1,39 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ChatMessage } from '../types';
-import { Bot, User } from 'lucide-react';
+import { Bot, User, Copy, Check } from 'lucide-react';
 
 interface ChatBubbleProps {
   message: ChatMessage;
 }
+
+const CodeBlock: React.FC<{ code: string; language?: string }> = ({ code, language }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="my-4 border border-slate-800 rounded-lg overflow-hidden shadow-lg select-text">
+      <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-400 font-mono select-none">
+        <span>{language || 'code'}</span>
+        <button
+          onClick={handleCopy}
+          type="button"
+          className="flex items-center gap-1 hover:text-slate-200 transition-colors"
+        >
+          {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      </div>
+      <pre className="bg-slate-950 p-4 overflow-x-auto text-xs font-mono text-sky-300">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+};
 
 // Advanced markdown formatter with table support
 const formatMarkdown = (text: string) => {
@@ -84,15 +113,15 @@ const formatMarkdown = (text: string) => {
 
     // Check for code block
     if (line.trim().startsWith('```')) {
+      const match = line.trim().match(/^```(\w+)?/);
+      const language = match ? match[1] : '';
       let codeEnd = i + 1;
       while (codeEnd < lines.length && !lines[codeEnd].trim().startsWith('```')) {
         codeEnd++;
       }
       const codeContent = lines.slice(i + 1, codeEnd).join('\n');
       result.push(
-        <pre key={`code-${i}`} className="bg-slate-900 border border-slate-700 rounded p-3 my-3 overflow-x-auto">
-          <code className="text-xs font-mono text-sky-300">{codeContent}</code>
-        </pre>
+        <CodeBlock key={`code-${i}`} code={codeContent} language={language} />
       );
       i = codeEnd + 1;
       continue;
@@ -216,11 +245,20 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
       
       <div className={`max-w-[85%] ${isAssistant ? 'chat-bubble-assistant' : 'chat-bubble-user'}`}>
         {!isAssistant && (
-          <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+          <p className="text-sm whitespace-pre-wrap leading-relaxed select-text">{message.content}</p>
         )}
         {isAssistant && (
-          <div className="prose-dark text-sm space-y-2">
-            {formatMarkdown(message.content)}
+          <div className="prose-dark text-sm space-y-2 select-text">
+            {message.content === '' ? (
+              <div className="flex items-center gap-1.5 py-2 px-1 text-slate-500 font-mono text-xs select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                <span className="ml-1 text-[10px] text-slate-400">Assistant preparing response...</span>
+              </div>
+            ) : (
+              formatMarkdown(message.content)
+            )}
           </div>
         )}
       </div>

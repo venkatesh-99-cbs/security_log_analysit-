@@ -5,7 +5,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime
 
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, request, jsonify, abort, Response, stream_with_context
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
@@ -48,13 +48,15 @@ def chat():
     payload = _validate_chat_payload(request.get_json(silent=True) or {})
     db = get_db_session()
     try:
-        history_records = (
+        # Fetch the latest 30 messages to avoid losing current context, and reverse to get chronological order
+        latest_records = (
             db.query(ChatHistory)
             .filter(ChatHistory.session_id == payload["session_id"])
-            .order_by(ChatHistory.timestamp.asc())
-            .limit(20)
+            .order_by(ChatHistory.timestamp.desc())
+            .limit(30)
             .all()
         )
+        history_records = list(reversed(latest_records))
         history = [{"role": h.role, "content": h.content} for h in history_records]
 
         rag_context: Optional[str] = None
@@ -91,6 +93,82 @@ def chat():
         })
     finally:
         db.close()
+
+
+@router.route("/chat/stream", methods=["POST"])
+def chat_stream():
+    payload = _validate_chat_payload(request.get_json(silent=True) or {})
+
+    # We must fetch history before starting the stream to avoid sharing db sessions across threads
+    db = get_db_session()
+    try:
+        latest_records = (
+            db.query(ChatHistory)
+            .filter(ChatHistory.session_id == payload["session_id"])
+            .order_by(ChatHistory.timestamp.desc())
+            .limit(30)
+            .all()
+        )
+        history_records = list(reversed(latest_records))
+        history = [{"role": h.role, "content": h.content} for h in history_records]
+    finally:
+        db.close()
+
+    rag_context: Optional[str] = None
+    rag_used = False
+    if payload["use_rag"]:
+        rag_svc = _get_rag_service()
+        rag_context = rag_svc.retrieve_context(payload["message"], n_results=4)
+        rag_used = bool(rag_context)
+
+    import json
+
+    def event_generator():
+        accumulated_text = ""
+        try:
+            # Yield initial metadata
+            yield f"data: {json.dumps({'event': 'metadata', 'rag_used': rag_used})}\n\n"
+
+            # Start streaming from chat service
+            stream_gen = _chat_service.respond_stream(
+                user_message=payload["message"],
+                history=history,
+                rag_context=rag_context,
+            )
+
+            for chunk in stream_gen:
+                accumulated_text += chunk
+                yield f"data: {json.dumps({'event': 'token', 'text': chunk})}\n\n"
+
+            # Stream complete event
+            yield f"data: {json.dumps({'event': 'done'})}\n\n"
+
+            # Save to database at the end of successful streaming
+            db_save = get_db_session()
+            try:
+                db_save.add(ChatHistory(
+                    session_id=payload["session_id"],
+                    role="user",
+                    content=payload["message"],
+                    timestamp=datetime.utcnow(),
+                ))
+                db_save.add(ChatHistory(
+                    session_id=payload["session_id"],
+                    role="assistant",
+                    content=accumulated_text,
+                    timestamp=datetime.utcnow(),
+                ))
+                db_save.commit()
+            except Exception as e:
+                logger.error("Failed to save streaming chat to DB: %s", e)
+            finally:
+                db_save.close()
+
+        except Exception as err:
+            logger.error("Error in streaming event generator: %s", err)
+            yield f"data: {json.dumps({'event': 'error', 'message': str(err)})}\n\n"
+
+    return Response(stream_with_context(event_generator()), mimetype="text/event-stream")
 
 
 @router.route("/chat/sessions", methods=["GET"])
