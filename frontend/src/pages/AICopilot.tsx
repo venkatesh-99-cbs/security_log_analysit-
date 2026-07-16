@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useChat } from '../hooks/useChat';
 import { ChatBubble } from '../components/ChatBubble';
+import { parseServerDate } from '../utils/formatDate';
 import { 
   Bot, 
   Send, 
@@ -38,6 +39,7 @@ const AICopilot: React.FC = () => {
     sessionId,
     switchSession,
     createNewSession,
+    cancelGeneration,
   } = useChat();
 
   const [input, setInput] = useState('');
@@ -83,7 +85,8 @@ const AICopilot: React.FC = () => {
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
-    const date = new Date(dateStr);
+    const date = parseServerDate(dateStr);
+    if (!date) return 'unknown time';
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     const minutes = Math.floor(diff / 60000);
@@ -278,6 +281,9 @@ const AICopilot: React.FC = () => {
                 <div className="flex items-center gap-2.5 text-xs text-slate-500 font-mono pl-4">
                   <Loader2 size={14} className="animate-spin text-sky-400" />
                   <span>Assistant thinking...</span>
+                  <button type="button" onClick={cancelGeneration} className="ml-2 btn-danger btn-sm py-1 px-2 text-[10px]">
+                    <X size={12} /> Cancel
+                  </button>
                 </div>
               )}
               

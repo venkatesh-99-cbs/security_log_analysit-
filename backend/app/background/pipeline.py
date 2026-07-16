@@ -79,7 +79,16 @@ def process_log_file(file_id: int) -> Dict[str, Any]:
                 category=str(entry.get("category", "general"))[:100],
                 severity=str(entry.get("severity", "info"))[:50],
                 message=str(entry.get("message", ""))[:2000],
-                raw_data=entry.get("raw_data"),
+                # Preserve the normalized enrichment so detectors can remain
+                # independent of the source format after database reloads.
+                raw_data={
+                    **(entry.get("raw_data") or {}),
+                    **{key: entry[key] for key in (
+                        "hostname", "user", "source_ip", "destination_ip", "event_id",
+                        "event_type", "process", "command_line", "parent_process", "status",
+                        "vendor", "product", "raw_log"
+                    ) if entry.get(key) is not None},
+                },
             )
             db.add(log_record)
 
@@ -100,6 +109,11 @@ def process_log_file(file_id: int) -> Dict[str, Any]:
                 "severity": l.severity,
                 "message": l.message,
                 "raw_data": l.raw_data or {},
+                **{key: (l.raw_data or {}).get(key) for key in (
+                    "hostname", "user", "source_ip", "destination_ip", "event_id",
+                    "event_type", "process", "command_line", "parent_process", "status",
+                    "vendor", "product", "raw_log"
+                ) if (l.raw_data or {}).get(key) is not None},
             }
             for l in saved_logs
         ]
@@ -138,6 +152,12 @@ def process_log_file(file_id: int) -> Dict[str, Any]:
         db.commit()
         summary["incidents_created"] = len(incidents_data)
 
+        # Store file metadata for history cards
+        try:
+            file_record.file_size = os.path.getsize(filepath) if os.path.exists(filepath) else None
+        except Exception:
+            file_record.file_size = None
+        file_record.findings_count = len(alerts)
         file_record.status = "processed"
         db.commit()
         summary["status"] = "success"

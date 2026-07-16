@@ -1,14 +1,15 @@
 """
-Incidents API — CRUD, AI analysis trigger, status update.
+Incidents API — CRUD, AI analysis trigger, status update, SOC timeline.
 """
 from typing import List, Optional
+from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify, abort
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database.session import get_db_session
-from ..models.base import AIAnalysis, Incident, MitreMapping, SecurityLog
+from ..models.base import AIAnalysis, Incident, MitreMapping, SecurityLog, UploadedFile
 from ..ai.ollama_client import IncidentAnalyzer
 
 router = Blueprint("incidents", __name__)
@@ -169,10 +170,166 @@ def analyze_incident(incident_id: int):
         db.close()
 
 
+@router.route("/<int:incident_id>/timeline", methods=["GET"])
+def get_incident_timeline(incident_id: int):
+    """
+    Returns a chronological list of SOC investigation events for an incident.
+    All timestamps are UTC ISO strings; the frontend localizes them via Intl.DateTimeFormat.
+    """
+    db = get_db_session()
+    try:
+        inc = db.query(Incident).filter(Incident.id == incident_id).first()
+        if not inc:
+            abort(404, "Incident not found")
+
+        events = []
+
+        # 1. Log upload event — derive from the earliest SecurityLog for this incident
+        #    We correlate via file records that contributed logs flagged near this incident.
+        #    Simplification: use the incident's own created_at as the baseline; find any
+        #    related UploadedFile by matching SecurityLogs whose timestamps are <= incident created_at.
+        related_file = (
+            db.query(UploadedFile)
+            .join(SecurityLog, SecurityLog.file_id == UploadedFile.id)
+            .filter(UploadedFile.status == "processed")
+            .order_by(UploadedFile.created_at.asc())
+            .first()
+        )
+
+        upload_ts = related_file.created_at if related_file else inc.created_at
+        events.append({
+            "id": "upload",
+            "event_type": "log_uploaded",
+            "title": "Log File Uploaded",
+            "description": f"File '{related_file.filename}' ingested into the pipeline" if related_file else "Log source ingested",
+            "severity": "info",
+            "timestamp": upload_ts.isoformat() if upload_ts else None,
+        })
+
+        # 2. Parsing completed — a few seconds after upload (use log count as indicator)
+        log_count = db.query(func.count(SecurityLog.id)).filter(
+            SecurityLog.file_id == (related_file.id if related_file else -1)
+        ).scalar() or 0
+
+        # Use first SecurityLog timestamp as parsing complete indicator
+        first_log = (
+            db.query(SecurityLog)
+            .filter(SecurityLog.file_id == (related_file.id if related_file else -1))
+            .order_by(SecurityLog.timestamp.asc())
+            .first()
+        )
+        parse_ts = first_log.timestamp if first_log else upload_ts
+        events.append({
+            "id": "parsed",
+            "event_type": "parsing_completed",
+            "title": "Log Parsing Completed",
+            "description": f"{log_count} log entries parsed and structured",
+            "severity": "info",
+            "timestamp": parse_ts.isoformat() if parse_ts else None,
+        })
+
+        # 3. Incident correlation / detection
+        events.append({
+            "id": "incident_created",
+            "event_type": "incident_detected",
+            "title": "Incident Detected",
+            "description": f"Correlation engine flagged: {inc.title}",
+            "severity": inc.severity or "medium",
+            "timestamp": inc.created_at.isoformat() if inc.created_at else None,
+        })
+
+        # 4. MITRE mapping
+        mitre = db.query(MitreMapping).filter(MitreMapping.incident_id == incident_id).all()
+        if mitre:
+            events.append({
+                "id": "mitre",
+                "event_type": "mitre_mapped",
+                "title": "MITRE ATT&CK Techniques Mapped",
+                "description": ", ".join(f"{m.technique_id} ({m.tactic})" for m in mitre[:3]),
+                "severity": "high" if any(m.tactic in ("execution", "persistence", "privilege-escalation") for m in mitre) else "medium",
+                "timestamp": inc.created_at.isoformat() if inc.created_at else None,
+            })
+
+        # 5. AI Analysis (most recent)
+        latest_analysis = (
+            db.query(AIAnalysis)
+            .filter(AIAnalysis.incident_id == incident_id)
+            .order_by(AIAnalysis.created_at.desc())
+            .first()
+        )
+        if latest_analysis:
+            events.append({
+                "id": f"analysis_{latest_analysis.id}",
+                "event_type": "analysis_completed",
+                "title": "AI Playbook Analysis Completed",
+                "description": "Ollama LLM generated incident response recommendations",
+                "severity": "info",
+                "timestamp": latest_analysis.created_at.isoformat() if latest_analysis.created_at else None,
+            })
+
+        # Sort chronologically by timestamp, None timestamps go last
+        events.sort(key=lambda e: e["timestamp"] or "9999")
+
+        return jsonify({
+            "incident_id": incident_id,
+            "events": events,
+        })
+    finally:
+        db.close()
+
+
+
+@router.route("/<int:incident_id>", methods=["DELETE"])
+def delete_incident(incident_id: int):
+    """Delete an individual incident and cascade delete its analyses/mappings."""
+    db = get_db_session()
+    try:
+        inc = db.query(Incident).filter(Incident.id == incident_id).first()
+        if not inc:
+            abort(404, "Incident not found")
+        db.delete(inc)
+        db.commit()
+        return jsonify({"deleted": True, "id": incident_id})
+    finally:
+        db.close()
+
+
+@router.route("/", methods=["DELETE"])
+def bulk_delete_incidents():
+    """Bulk-delete selected incidents by ID or delete all incidents if 'all' is true."""
+    payload = request.get_json(silent=True) or {}
+    ids = payload.get("ids", [])
+    delete_all = payload.get("all", False)
+
+    db = get_db_session()
+    try:
+        if delete_all:
+            deleted_count = db.query(Incident).delete(synchronize_session=False)
+            db.commit()
+            return jsonify({"deleted": deleted_count})
+        elif ids:
+            deleted_count = db.query(Incident).filter(Incident.id.in_(ids)).delete(synchronize_session=False)
+            db.commit()
+            return jsonify({"deleted": deleted_count, "ids": ids})
+        else:
+            abort(400, "Provide a list of 'ids' or set 'all' to true")
+    finally:
+        db.close()
+
+
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _serialize_incident(inc: Incident, db: Session, include_analyses=False, include_logs=False) -> dict:
     mitre = db.query(MitreMapping).filter(MitreMapping.incident_id == inc.id).all()
+    # Incidents currently predate a direct upload FK. Resolve the upload that
+    # created the incident from the processing timeline so the queue can group
+    # investigations by upload batch.
+    upload = (
+        db.query(UploadedFile)
+        .filter(UploadedFile.created_at <= inc.created_at)
+        .order_by(UploadedFile.created_at.desc())
+        .first()
+    )
     result = {
         "id": inc.id,
         "title": inc.title,
@@ -189,6 +346,9 @@ def _serialize_incident(inc: Incident, db: Session, include_analyses=False, incl
             }
             for m in mitre
         ],
+        "upload_id": upload.id if upload else None,
+        "upload_filename": upload.filename if upload else "Unassigned upload",
+        "upload_created_at": upload.created_at.isoformat() if upload and upload.created_at else None,
     }
     if include_analyses:
         analyses = db.query(AIAnalysis).filter(AIAnalysis.incident_id == inc.id).all()

@@ -45,6 +45,20 @@ class Settings(BaseSettings):
         "qwen2.5:1.5b-instruct",
     ]
 
+    # AI - Ollama context / model-selection tuning
+    # Ceiling on num_ctx (tokens). Raise this if you have RAM/VRAM to spare and
+    # want even longer reports; lower it on constrained machines to avoid OOM.
+    OLLAMA_MAX_CONTEXT: int = int(os.getenv("OLLAMA_MAX_CONTEXT", "16384"))
+    # Floor on num_ctx (tokens), used even for short prompts so replies never
+    # start cramped.
+    OLLAMA_MIN_CONTEXT: int = int(os.getenv("OLLAMA_MIN_CONTEXT", "4096"))
+    # When True (default), the client scores every installed model by real
+    # context length + parameter size and auto-picks the best fit for each
+    # request, unless OLLAMA_MODEL above is explicitly set to an installed
+    # model (which always wins as a manual pin). Set False to always use
+    # OLLAMA_MODEL / the OLLAMA_MODEL_FALLBACKS candidate list instead.
+    OLLAMA_AUTO_SELECT_MODEL: bool = os.getenv("OLLAMA_AUTO_SELECT_MODEL", "true").lower() in ("1", "true", "yes")
+
     # File Storage
     UPLOAD_DIR: str = "./uploads"
     REPORT_DIR: str = "./reports"

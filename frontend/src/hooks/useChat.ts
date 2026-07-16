@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChatMessage } from '../types';
 import { api } from '../services/api';
 
@@ -17,6 +17,15 @@ export const useChat = (initialSessionId?: string) => {
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const sessionIdRef = useRef(sessionId);
+  const generatingSessionRef = useRef<string | null>(null);
+
+  // Keep sessionIdRef updated with active sessionId
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
   // Auto-generate session ID if not provided
   useEffect(() => {
     if (!sessionId) {
@@ -27,9 +36,12 @@ export const useChat = (initialSessionId?: string) => {
 
   const loadHistory = useCallback(async () => {
     if (!sessionId) return;
+    const requestedSessionId = sessionId;
     try {
       const history = await api.getChatHistory(sessionId);
-      setMessages(history);
+      // A quick tab switch can leave an older request in flight. Never let
+      // that response replace the newly selected conversation.
+      if (sessionIdRef.current === requestedSessionId) setMessages(history);
     } catch (err) {
       console.error('Failed to load chat history:', err);
     }
@@ -61,26 +73,43 @@ export const useChat = (initialSessionId?: string) => {
     fetchAIStatus();
   }, [sessionId, loadHistory, loadSessions]);
 
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const sendMessage = async (text: string, useRag = true) => {
     if (!text.trim() || !sessionId || loading) return;
 
-    const userMessage: ChatMessage = { role: 'user', content: text };
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const targetSessionId = sessionId;
+
+    const now = new Date().toISOString();
+    const userMessage: ChatMessage = { role: 'user', content: text, timestamp: now };
     setMessages((prev) => [...prev, userMessage]);
     setLoading(true);
+    generatingSessionRef.current = targetSessionId;
     setError(null);
 
-    // Placeholder for assistant message to append tokens dynamically
     let currentAssistantContent = '';
 
-    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+    setMessages((prev) => [...prev, { role: 'assistant', content: '', timestamp: new Date().toISOString() }]);
 
     try {
       await api.chatStream({
-        session_id: sessionId,
+        session_id: targetSessionId,
         message: text,
         use_rag: useRag,
       }, {
         onToken: (token: string) => {
+          if (sessionIdRef.current !== targetSessionId) return;
           currentAssistantContent += token;
           setMessages((prev) => {
             const updated = [...prev];
@@ -95,20 +124,38 @@ export const useChat = (initialSessionId?: string) => {
           console.log('RAG groundings used:', ragUsed);
         },
         onDone: () => {
+          if (sessionIdRef.current !== targetSessionId) return;
           setLoading(false);
+          generatingSessionRef.current = null;
           loadSessions();
         },
         onError: (err: string) => {
+          if (sessionIdRef.current !== targetSessionId) return;
+          if (err.includes('aborted') || err.includes('AbortError')) {
+            return;
+          }
           console.error('Stream error:', err);
           setError(err);
           setLoading(false);
+          generatingSessionRef.current = null;
         }
-      });
+      }, controller.signal);
     } catch (err: any) {
+      if (sessionIdRef.current !== targetSessionId) return;
+      if (err.name === 'AbortError' || err.message?.includes('aborted')) return;
       console.error('Failed to send message:', err);
       setError(err.message || 'Failed to connect to assistant stream.');
       setLoading(false);
+      generatingSessionRef.current = null;
     }
+  };
+
+  const cancelGeneration = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    generatingSessionRef.current = null;
+    setLoading(false);
+    setMessages((prev) => prev.filter((message, index) => !(index === prev.length - 1 && message.role === 'assistant' && !message.content)));
   };
 
   const clearChat = async () => {
@@ -142,6 +189,10 @@ export const useChat = (initialSessionId?: string) => {
 
   const switchSession = (newSessionId: string) => {
     setSessionId(newSessionId);
+    // Keep any existing stream alive in the background, but make the newly
+    // selected conversation immediately interactive.
+    setLoading(false);
+    setError(null);
   };
 
   const createNewSession = () => {
@@ -165,5 +216,6 @@ export const useChat = (initialSessionId?: string) => {
     switchSession,
     createNewSession,
     refreshSessions: loadSessions,
+    cancelGeneration,
   };
 };

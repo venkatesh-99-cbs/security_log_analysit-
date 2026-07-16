@@ -28,6 +28,9 @@ export interface Incident {
   threat_score?: number;
   source_ip?: string;
   alert_count?: number;
+  upload_id?: number | null;
+  upload_filename?: string;
+  upload_created_at?: string | null;
 }
 
 export interface AIAnalysis {
@@ -45,6 +48,10 @@ export interface UploadedFile {
   status: 'uploaded' | 'processing' | 'processed' | 'failed';
   created_at: string;
   log_count?: number;
+  /** File size in bytes (populated after upload) */
+  file_size?: number | null;
+  /** Number of security alerts/findings detected during pipeline processing */
+  findings_count?: number | null;
 }
 
 export interface ChatMessage {
@@ -60,4 +67,26 @@ export interface Report {
   report_type: string;
   created_at: string;
   exists: boolean;
+}
+
+/** A single event in the SOC investigation timeline for an incident. */
+export interface TimelineEvent {
+  id: string;
+  event_type:
+    | 'log_uploaded'
+    | 'parsing_completed'
+    | 'incident_detected'
+    | 'mitre_mapped'
+    | 'analysis_completed'
+    | string;
+  title: string;
+  description: string;
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
+  /** UTC ISO timestamp string from the backend — localize on the frontend */
+  timestamp: string | null;
+}
+
+export interface IncidentTimeline {
+  incident_id: number;
+  events: TimelineEvent[];
 }

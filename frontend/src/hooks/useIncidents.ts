@@ -25,8 +25,11 @@ export const useIncidents = (initialFilters?: { status?: string; severity?: stri
       if (filters.severity) cleanParams.severity = filters.severity;
       
       const response = await api.getIncidents(cleanParams);
-      setIncidents(response.items);
-      setTotal(response.total);
+      // Keep the queue resilient to both the paginated API response and a
+      // plain array response (useful while the backend is being upgraded).
+      const items = Array.isArray(response) ? response : (response?.items || []);
+      setIncidents(items);
+      setTotal(Array.isArray(response) ? items.length : (response?.total ?? items.length));
       setError(null);
     } catch (err) {
       console.error('Failed to fetch incidents:', err);
@@ -44,6 +47,26 @@ export const useIncidents = (initialFilters?: { status?: string; severity?: stri
     setFilters((prev) => ({ ...prev, ...newFilters, skip: 0 })); // Reset page to 0 on filter change
   };
 
+  const deleteIncident = async (id: number) => {
+    try {
+      await api.deleteIncident(id);
+      await fetchIncidents();
+    } catch (err) {
+      console.error('Failed to delete incident:', err);
+      throw err;
+    }
+  };
+
+  const bulkDeleteIncidents = async (ids?: number[], deleteAll = false) => {
+    try {
+      await api.bulkDeleteIncidents(ids, deleteAll);
+      await fetchIncidents();
+    } catch (err) {
+      console.error('Failed to bulk delete incidents:', err);
+      throw err;
+    }
+  };
+
   return { 
     incidents, 
     total, 
@@ -51,6 +74,8 @@ export const useIncidents = (initialFilters?: { status?: string; severity?: stri
     error, 
     filters, 
     updateFilters, 
-    refetch: fetchIncidents 
+    refetch: fetchIncidents,
+    deleteIncident,
+    bulkDeleteIncidents
   };
 };

@@ -5,7 +5,8 @@ interface SeverityBadgeProps {
 }
 
 export const SeverityBadge: React.FC<SeverityBadgeProps> = ({ severity }) => {
-  const sev = severity.toLowerCase();
+  const safeSeverity = severity ? String(severity) : 'info';
+  const sev = safeSeverity.toLowerCase();
   
   let className = 'badge-info';
   if (sev === 'critical') className = 'badge-critical';
@@ -15,7 +16,7 @@ export const SeverityBadge: React.FC<SeverityBadgeProps> = ({ severity }) => {
 
   return (
     <span className={`badge ${className}`}>
-      {severity.toUpperCase()}
+      {safeSeverity.toUpperCase()}
     </span>
   );
 };

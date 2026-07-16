@@ -50,6 +50,16 @@ export const api = {
     return response.data;
   },
 
+  deleteFile: async (id: number) => {
+    const response = await client.delete(`/logs/files/${id}`);
+    return response.data;
+  },
+
+  bulkDeleteFiles: async (ids: number[]) => {
+    const response = await client.delete('/logs/files', { data: { ids } });
+    return response.data;
+  },
+
   // --- Incidents ---
   getIncidents: async (params?: {
     skip?: number;
@@ -81,6 +91,21 @@ export const api = {
     return response.data;
   },
 
+  getIncidentTimeline: async (id: number) => {
+    const response = await client.get(`/incidents/${id}/timeline`);
+    return response.data;
+  },
+
+  deleteIncident: async (id: number) => {
+    const response = await client.delete(`/incidents/${id}`);
+    return response.data;
+  },
+
+  bulkDeleteIncidents: async (ids?: number[], deleteAll = false) => {
+    const response = await client.delete('/incidents/', { data: { ids, all: deleteAll } });
+    return response.data;
+  },
+
   // --- AI / Copilot ---
   chat: async (data: { session_id: string; message: string; use_rag?: boolean }) => {
     const response = await client.post('/ai/chat', data);
@@ -94,7 +119,8 @@ export const api = {
       onMetadata?: (ragUsed: boolean) => void;
       onDone: () => void;
       onError: (error: string) => void;
-    }
+    },
+    signal?: AbortSignal
   ) => {
     try {
       const response = await fetch(`${API_URL}/ai/chat/stream`, {
@@ -103,6 +129,7 @@ export const api = {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(data),
+        signal,
       });
 
       if (!response.ok) {

@@ -83,7 +83,7 @@ class WindowsEventParser(LogParser):
             try:
                 root = ET.fromstring(f"<Events>{raw_data}</Events>")
             except ET.ParseError:
-                return results
+                return self._parse_flat_events(raw_data)
 
         tag_local = root.tag.split("}")[-1] if "}" in root.tag else root.tag
 
@@ -95,11 +95,41 @@ class WindowsEventParser(LogParser):
         else:
             events = root.findall(".//e:Event", _NS) or root.findall(".//Event")
 
+        if not events and "EventID=" in raw_data:
+            return self._parse_flat_events(raw_data)
+
         for event in events:
             parsed = self._parse_event(event)
             if parsed:
                 results.append(parsed)
 
+        return results
+
+    def _parse_flat_events(self, raw_data: str) -> List[Dict[str, Any]]:
+        """Parse exported key/value Windows records (EventID=4625 ...)."""
+        results = []
+        for line in raw_data.splitlines():
+            match = re.match(r"(?P<timestamp>\S+\s+\S+)\s+(?P<body>.*)", line.strip())
+            if not match or "EventID=" not in match.group("body"):
+                continue
+            fields = dict(re.findall(r"(\w+)=('.*?'|\".*?\"|\S+)", match.group("body")))
+            try:
+                event_id = int(fields.get("EventID", "0"))
+                timestamp = datetime.fromisoformat(match.group("timestamp"))
+            except (ValueError, TypeError):
+                continue
+            fields = {key: value.strip("'\"") for key, value in fields.items()}
+            message = fields.get("Message", f"Windows Event {event_id}")
+            results.append({
+                "timestamp": timestamp, "source": fields.get("Computer", "unknown"),
+                "category": CATEGORY_MAP.get(event_id, "system"),
+                "severity": "critical" if event_id in (4732, 1116, 4740) else SEVERITY_MAP.get(event_id, "info"),
+                "message": message,
+                "raw_data": {"event_id": event_id, **fields},
+                "event_id": event_id, "event_type": f"windows_{event_id}",
+                "source_ip": fields.get("SourceIP"), "user": fields.get("User"),
+                "hostname": fields.get("Computer"), "command_line": fields.get("CommandLine"),
+            })
         return results
 
     def _parse_event(self, event: ET.Element) -> Dict[str, Any] | None:

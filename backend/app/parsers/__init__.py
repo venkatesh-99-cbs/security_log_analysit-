@@ -7,6 +7,7 @@ from .windows_event import WindowsEventParser
 from .linux_syslog import LinuxSyslogParser
 from .json_log import JSONLogParser
 from .csv_log import CSVLogParser
+from .normalizer import normalize_event
 
 
 def detect_format(raw_data: str) -> str:
@@ -87,8 +88,12 @@ def parse_log_file(raw_data: str, filename: str = "") -> List[Dict[str, Any]]:
     # Content-based detection
     content_format = detect_format(raw_data)
     
-    # Prefer extension hint if available
-    chosen_format = ext_hint or content_format
+    # Content is authoritative for mixed/custom files; extensions are only a
+    # fallback for ambiguous plain text files.
+    if "EventID=" in raw_data[:2000]:
+        chosen_format = "windows_event"
+    else:
+        chosen_format = content_format if content_format != "syslog" else (ext_hint or content_format)
     parser = get_parser(chosen_format)
     
     results = parser.parse(raw_data)
@@ -104,10 +109,10 @@ def parse_log_file(raw_data: str, filename: str = "") -> List[Dict[str, Any]]:
                 except Exception:
                     continue
     
-    return results
+    return [normalize_event(entry) for entry in results]
 
 
 __all__ = [
     "LogParser", "WindowsEventParser", "LinuxSyslogParser",
-    "JSONLogParser", "CSVLogParser", "parse_log_file", "detect_format", "get_parser"
+    "JSONLogParser", "CSVLogParser", "normalize_event", "parse_log_file", "detect_format", "get_parser"
 ]

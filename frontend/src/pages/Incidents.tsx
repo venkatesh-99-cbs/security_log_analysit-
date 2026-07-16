@@ -1,7 +1,7 @@
 import React from 'react';
 import { useIncidents } from '../hooks/useIncidents';
 import { IncidentCard } from '../components/IncidentCard';
-import { Loader2, ShieldAlert, RefreshCw, Filter } from 'lucide-react';
+import { Loader2, ShieldAlert, RefreshCw, Filter, Trash2, UploadCloud } from 'lucide-react';
 
 const Incidents: React.FC = () => {
   const { 
@@ -10,8 +10,37 @@ const Incidents: React.FC = () => {
     loading, 
     filters, 
     updateFilters, 
-    refetch 
+    refetch,
+    deleteIncident,
+    bulkDeleteIncidents
+    , error
   } = useIncidents();
+
+  const handleDeleteIndividual = async (id: number, title: string) => {
+    if (window.confirm(`Are you sure you want to delete incident: "${title}"?\nThis cannot be undone.`)) {
+      try {
+        await deleteIncident(id);
+      } catch (err) {
+        alert('Failed to delete incident.');
+      }
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (window.confirm('Are you sure you want to clear the entire incident response queue?\nAll incident data, AI analyses, and MITRE maps will be permanently deleted.')) {
+      try {
+        await bulkDeleteIncidents([], true);
+      } catch (err) {
+        alert('Failed to clear incident queue.');
+      }
+    }
+  };
+
+  const groupedIncidents = incidents.reduce<Record<string, typeof incidents>>((groups, incident) => {
+    const key = incident.upload_id ? String(incident.upload_id) : 'unassigned';
+    (groups[key] ||= []).push(incident);
+    return groups;
+  }, {});
 
   return (
     <div className="p-8 max-w-7xl mx-auto flex flex-col gap-8 animate-fade-in">
@@ -27,14 +56,26 @@ const Incidents: React.FC = () => {
           </p>
         </div>
 
-        <button 
-          onClick={refetch}
-          disabled={loading}
-          className="btn-secondary btn-sm flex items-center gap-1.5"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Reload Incidents
-        </button>
+        <div className="flex items-center gap-2">
+          {incidents.length > 0 && (
+            <button
+              onClick={handleDeleteAll}
+              disabled={loading}
+              className="btn-danger btn-sm flex items-center gap-1.5 font-semibold text-xs py-2 px-3 border border-red-500/25 bg-red-500/10 hover:bg-red-500/25 rounded-xl transition-all"
+            >
+              <Trash2 size={14} />
+              Clear Queue
+            </button>
+          )}
+          <button 
+            onClick={refetch}
+            disabled={loading}
+            className="btn-secondary btn-sm flex items-center gap-1.5"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Reload Incidents
+          </button>
+        </div>
       </div>
 
       {/* Filter Toolbar */}
@@ -92,17 +133,36 @@ const Incidents: React.FC = () => {
             <ShieldAlert size={36} />
           </div>
           <div>
-            <h4 className="font-bold text-slate-300 text-lg">No incidents triggered</h4>
+            <h4 className="font-bold text-slate-300 text-lg">{error ? 'Incident queue unavailable' : 'No incidents triggered'}</h4>
             <p className="text-sm text-slate-500 max-w-sm mt-1">
-              There are no current security incidents matching the configured rules and log signatures.
+              {error ? 'The incident service could not be reached. Reload the queue to try again.' : 'There are no current security incidents matching the configured rules and log signatures.'}
             </p>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {incidents.map((incident) => (
-            <IncidentCard key={incident.id} incident={incident} />
-          ))}
+        <div className="queue-scroll-area flex flex-col gap-6 pr-2">
+          {Object.entries(groupedIncidents).map(([uploadKey, uploadIncidents], index) => {
+            const first = uploadIncidents[0];
+            return (
+              <section key={uploadKey} className="incident-upload-group">
+                <div className="incident-upload-heading">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="incident-upload-icon"><UploadCloud size={16} /></span>
+                    <div className="min-w-0">
+                      <p className="incident-upload-kicker">Log upload {index + 1}</p>
+                      <h2 className="incident-upload-title truncate">{first.upload_filename || 'Unassigned upload'}</h2>
+                    </div>
+                  </div>
+                  <span className="incident-upload-count">{uploadIncidents.length} {uploadIncidents.length === 1 ? 'incident' : 'incidents'}</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-5">
+                  {uploadIncidents.map((incident) => (
+                    <IncidentCard key={incident.id} incident={incident} onDelete={() => handleDeleteIndividual(incident.id, incident.title)} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,0 +1,73 @@
+[
+  {
+    "id": "IDENTITY-PRIV-4672",
+    "name": "Privileged account login",
+    "type": "event_id", "event_id": 4672, "mitre": "T1078",
+    "severity": "high", "confidence": 0.78,
+    "response": "Validate the account, host, and logon context against expected administrator activity."
+  },
+  {
+    "id": "EXEC-ENCODED-4688",
+    "name": "Encoded PowerShell execution",
+    "type": "event_id", "event_id": 4688, "match": "powershell|pwsh|-enc|encodedcommand",
+    "mitre": "T1059.001", "severity": "high", "confidence": 0.92,
+    "response": "Collect the full command line and parent process, then isolate the host if execution is unauthorized."
+  },
+  {
+    "id": "PERSIST-GROUP-4732",
+    "name": "Administrator group modification",
+    "type": "event_id", "event_id": 4732, "mitre": "T1098",
+    "severity": "critical", "confidence": 0.94,
+    "response": "Review the member, initiating identity, and reverse unauthorized group membership immediately."
+  },
+  {
+    "id": "MALWARE-1116",
+    "name": "Malware detection",
+    "type": "event_id", "event_id": 1116, "mitre": "T1204",
+    "severity": "critical", "confidence": 0.96,
+    "response": "Isolate the endpoint, preserve the detection evidence, and begin malware triage."
+  },
+  {
+    "id": "NETWORK-BLOCK-5157",
+    "name": "Blocked network connection",
+    "type": "event_id", "event_id": 5157, "mitre": "T1071",
+    "severity": "high", "confidence": 0.7,
+    "response": "Correlate the destination port, process, and repeated attempts with endpoint activity."
+  },
+  {
+    "id": "IDENTITY-LOCKOUT-4740",
+    "name": "Account lockout after authentication abuse",
+    "type": "event_id", "event_id": 4740, "mitre": "T1110",
+    "severity": "critical", "confidence": 0.9,
+    "response": "Confirm the lockout source and investigate preceding failed logons before unlocking."
+  },
+  {
+    "id": "AUTH-BRUTE-001",
+    "name": "Repeated authentication failures",
+    "type": "threshold",
+    "mitre": "T1110",
+    "severity": "high",
+    "confidence": 0.82,
+    "threshold": 5,
+    "window_minutes": 5,
+    "response": "Validate the source, lock or reset targeted accounts, and review successful logons."
+  },
+  {
+    "id": "EXEC-POWERSHELL-001",
+    "name": "Suspicious PowerShell execution",
+    "type": "behavior",
+    "mitre": "T1059.001",
+    "severity": "high",
+    "confidence": 0.86,
+    "response": "Capture the command line, parent process, user, and host before containment."
+  },
+  {
+    "id": "DEF-EVASION-001",
+    "name": "Security log clearing",
+    "type": "behavior",
+    "mitre": "T1070.001",
+    "severity": "high",
+    "confidence": 0.9,
+    "response": "Preserve remote telemetry and investigate the initiating identity and process."
+  }
+]

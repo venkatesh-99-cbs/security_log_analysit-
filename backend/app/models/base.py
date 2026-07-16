@@ -10,7 +10,9 @@ class UploadedFile(Base):
     filepath = Column(String)
     status = Column(String)  # uploaded, processing, processed, failed
     created_at = Column(DateTime, default=datetime.utcnow)
-    logs = relationship("SecurityLog", back_populates="file")
+    file_size = Column(Integer, nullable=True)       # bytes on disk
+    findings_count = Column(Integer, nullable=True)  # alerts detected during pipeline
+    logs = relationship("SecurityLog", back_populates="file", cascade="all, delete-orphan")
 
 class SecurityLog(Base):
     __tablename__ = "security_logs"
@@ -33,8 +35,8 @@ class Incident(Base):
     severity = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    mitre_mappings = relationship("MitreMapping", back_populates="incident")
-    analyses = relationship("AIAnalysis", back_populates="incident")
+    mitre_mappings = relationship("MitreMapping", back_populates="incident", cascade="all, delete-orphan")
+    analyses = relationship("AIAnalysis", back_populates="incident", cascade="all, delete-orphan")
 
 class AIAnalysis(Base):
     __tablename__ = "ai_analyses"

@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
 import { ChatMessage } from '../types';
 import { Bot, User, Copy, Check } from 'lucide-react';
+import { parseServerDate } from '../utils/formatDate';
 
 interface ChatBubbleProps {
   message: ChatMessage;
 }
+
+const formatMessageTime = (timestamp?: string) => {
+  if (!timestamp) return '';
+  const date = parseServerDate(timestamp);
+  return !date ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
 
 const CodeBlock: React.FC<{ code: string; language?: string }> = ({ code, language }) => {
   const [copied, setCopied] = useState(false);
@@ -43,6 +50,17 @@ const formatMarkdown = (text: string) => {
   const result: React.ReactNode[] = [];
   let i = 0;
 
+  // Helper for parsing rows while preserving empty cells
+  const parseRow = (rowStr: string) => {
+    let cells = rowStr.split('|').map(cell => cell.trim());
+    if (rowStr.startsWith('|')) cells.shift();
+    if (rowStr.endsWith('|')) cells.pop();
+    return cells;
+  };
+
+  // Robust pattern to identify list markers (bullet, dash, numbered list like "10.", letter list like "a.")
+  const listMarkerRegex = /^(?:(?:\d+\.)|[*•\-]|(?:\w\.))\s/;
+
   while (i < lines.length) {
     const line = lines[i];
 
@@ -58,10 +76,8 @@ const formatMarkdown = (text: string) => {
 
       // Parse table
       const tableLines = lines.slice(tableStart, tableEnd);
-      const headerRow = tableLines[0].split('|').map(cell => cell.trim()).filter(cell => cell);
-      const rows = tableLines.slice(2).map(row => 
-        row.split('|').map(cell => cell.trim()).filter(cell => cell)
-      );
+      const headerRow = parseRow(tableLines[0]);
+      const rows = tableLines.slice(2).map(row => parseRow(row));
 
       result.push(
         <div key={`table-${i}`} className="my-3 overflow-x-auto">
@@ -128,9 +144,9 @@ const formatMarkdown = (text: string) => {
     }
 
     // Check for list items
-    if (line.trim().match(/^[\d+.•\-]\s/)) {
+    if (line.trim().match(listMarkerRegex)) {
       const listStart = i;
-      while (i < lines.length && (lines[i].trim().match(/^[\d+.•\-]\s/) || lines[i].startsWith('  '))) {
+      while (i < lines.length && (lines[i].trim().match(listMarkerRegex) || lines[i].startsWith('  ') || lines[i].startsWith('\t'))) {
         i++;
       }
 
@@ -140,7 +156,7 @@ const formatMarkdown = (text: string) => {
       result.push(
         <ul key={`list-${listStart}`} className={`my-2 ${isNumbered ? 'list-decimal' : 'list-disc'} ml-6`}>
           {listItems.map((item, idx) => {
-            const cleanItem = item.trim().replace(/^[\d+.•\-]\s/, '');
+            const cleanItem = item.trim().replace(listMarkerRegex, '');
             return (
               <li key={idx} className="mb-1 text-slate-300">
                 {parseInline(cleanItem)}
@@ -181,14 +197,14 @@ const parseInline = (text: string): React.ReactNode[] => {
   let remaining = text;
   let partKey = 0;
 
-  // Replace markdown inline elements
+  // Replace markdown inline elements (non-global to prevent regex state retention)
   const patterns = [
-    { regex: /\*\*(.*?)\*\*/g, render: (match: string) => <strong className="font-bold text-slate-100">{match}</strong> },
-    { regex: /__(.*?)__/g, render: (match: string) => <strong className="font-bold text-slate-100">{match}</strong> },
-    { regex: /\*(.*?)\*/g, render: (match: string) => <em className="italic text-slate-300">{match}</em> },
-    { regex: /_(.*?)_/g, render: (match: string) => <em className="italic text-slate-300">{match}</em> },
-    { regex: /`(.*?)`/g, render: (match: string) => <code className="bg-slate-900 border border-slate-700/60 text-sky-400 px-1.5 py-0.5 rounded text-xs font-mono">{match}</code> },
-    { regex: /\[(.*?)\]\((.*?)\)/g, render: (match: string, url: string) => <a href={url} className="text-sky-400 hover:underline" target="_blank" rel="noopener noreferrer">{match}</a> },
+    { regex: /\*\*(.*?)\*\*/, render: (match: string) => <strong className="font-bold text-slate-100">{match}</strong> },
+    { regex: /__(.*?)__/, render: (match: string) => <strong className="font-bold text-slate-100">{match}</strong> },
+    { regex: /\*(.*?)\*/, render: (match: string) => <em className="italic text-slate-300">{match}</em> },
+    { regex: /_(.*?)_/, render: (match: string) => <em className="italic text-slate-300">{match}</em> },
+    { regex: /`(.*?)`/, render: (match: string) => <code className="bg-slate-900 border border-slate-700/60 text-sky-400 px-1.5 py-0.5 rounded text-xs font-mono">{match}</code> },
+    { regex: /\[(.*?)\]\((.*?)\)/, render: (match: string, url: string) => <a href={url} className="text-sky-400 hover:underline" target="_blank" rel="noopener noreferrer">{match}</a> },
   ];
 
   while (remaining.length > 0) {
@@ -243,7 +259,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
         </div>
       )}
       
-      <div className={`max-w-[85%] ${isAssistant ? 'chat-bubble-assistant' : 'chat-bubble-user'}`}>
+      <div className={`max-w-[85%] ${isAssistant ? 'chat-bubble-assistant font-sans select-text leading-relaxed text-sm' : 'chat-bubble-user font-sans select-text leading-relaxed text-sm'}`}>
         {!isAssistant && (
           <p className="text-sm whitespace-pre-wrap leading-relaxed select-text">{message.content}</p>
         )}
@@ -261,6 +277,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
             )}
           </div>
         )}
+        <div className="mt-2 text-[10px] text-slate-500 text-right select-none">{formatMessageTime(message.timestamp)}</div>
       </div>
 
       {!isAssistant && (

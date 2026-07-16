@@ -5,7 +5,8 @@ interface StatusBadgeProps {
 }
 
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
-  const stat = status.toLowerCase();
+  const safeStatus = status ? String(status) : 'closed';
+  const stat = safeStatus.toLowerCase();
   
   let className = 'badge-closed';
   let dotColor = 'bg-slate-400';

@@ -8,6 +8,7 @@ from .privilege_escalation import PrivilegeEscalationDetector
 from .lateral_movement import LateralMovementDetector
 from .anomaly import AnomalyDetector
 from .base import BaseDetector
+from .rule_engine import RuleEngine
 
 
 class DetectionOrchestrator:
@@ -22,6 +23,7 @@ class DetectionOrchestrator:
             PrivilegeEscalationDetector(),
             LateralMovementDetector(),
             AnomalyDetector(),
+            RuleEngine(),
         ]
 
     def run_all(self, logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -55,5 +57,6 @@ __all__ = [
     "PrivilegeEscalationDetector",
     "LateralMovementDetector",
     "AnomalyDetector",
+    "RuleEngine",
     "DetectionOrchestrator",
 ]

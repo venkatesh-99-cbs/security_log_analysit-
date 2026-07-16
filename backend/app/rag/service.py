@@ -224,13 +224,87 @@ class RAGQueryService:
         return 1 if success else 0
 
     def ingest_security_knowledge(self) -> int:
-        """Ingest built-in security knowledge into the vector store."""
+        """Ingest built-in and external Markdown security knowledge into the vector store."""
+        import os
+        
+        # 1. Start with built-in playbook entries
         knowledge = _builtin_security_knowledge()
         docs = [k["content"] for k in knowledge]
         metas = [{"title": k["title"], "source": k["source"], "category": k["category"]} for k in knowledge]
         ids = [k["id"] for k in knowledge]
-        self._store.add_documents(docs, metas, ids)
-        return len(docs)
+
+        # 2. Recursively find and load all Markdown files under root Knowledge_base
+        paths_to_try = [
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Knowledge_base"),
+            "../Knowledge_base",
+            "./Knowledge_base",
+            "Knowledge_base"
+        ]
+        
+        base_dir = None
+        for path in paths_to_try:
+            if os.path.exists(path) and os.path.isdir(path):
+                base_dir = os.path.abspath(path)
+                break
+                
+        if base_dir:
+            logger.info("Found Knowledge_base directory at: %s. Loading all .md files...", base_dir)
+            loaded_count = 0
+            for root_dir, _, files in os.walk(base_dir):
+                # Ignore .git directory if present
+                if ".git" in root_dir:
+                    continue
+                for file in files:
+                    if file.lower().endswith(".md"):
+                        file_path = os.path.join(root_dir, file)
+                        try:
+                            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                                content = f.read()
+                            
+                            content_stripped = content.strip()
+                            if not content_stripped:
+                                continue
+                            
+                            category = os.path.basename(root_dir)
+                            if category == "Knowledge_base" or not category:
+                                category = "general"
+                                
+                            # Extract title from the first heading if possible, else filename
+                            first_line = content_stripped.split("\n")[0]
+                            if first_line.startswith("#"):
+                                title = first_line.replace("#", "").strip()
+                            else:
+                                title = os.path.splitext(file)[0].replace("_", " ").title()
+                                
+                            rel_path = os.path.relpath(file_path, base_dir)
+                            doc_id = f"kb_{rel_path.replace(os.sep, '_').replace('.', '_')}".lower()
+                            
+                            docs.append(content_stripped)
+                            metas.append({
+                                "title": title,
+                                "source": f"Knowledge Base - {category.replace('_', ' ').title()}",
+                                "category": category
+                            })
+                            ids.append(doc_id)
+                            loaded_count += 1
+                        except Exception as e:
+                            logger.error("Failed to read knowledge file %s: %s", file_path, e)
+            logger.info("Successfully parsed %d external knowledge documents.", loaded_count)
+        else:
+            logger.warning("Knowledge_base directory not found in candidate paths.")
+
+        # Batch upload to vector store to prevent large payload limitations
+        batch_size = 100
+        total_uploaded = 0
+        for i in range(0, len(docs), batch_size):
+            batch_docs = docs[i:i+batch_size]
+            batch_metas = metas[i:i+batch_size]
+            batch_ids = ids[i:i+batch_size]
+            success = self._store.add_documents(batch_docs, batch_metas, batch_ids)
+            if success:
+                total_uploaded += len(batch_docs)
+                
+        return total_uploaded
 
 
 def _builtin_security_knowledge() -> List[Dict[str, str]]:

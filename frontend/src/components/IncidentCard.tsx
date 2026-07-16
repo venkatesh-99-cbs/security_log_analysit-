@@ -3,13 +3,14 @@ import { Incident } from '../types';
 import { SeverityBadge } from './SeverityBadge';
 import { StatusBadge } from './StatusBadge';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Calendar, ShieldAlert } from 'lucide-react';
+import { AlertCircle, Calendar, ShieldAlert, Trash2 } from 'lucide-react';
 
 interface IncidentCardProps {
   incident: Incident;
+  onDelete?: () => void;
 }
 
-export const IncidentCard: React.FC<IncidentCardProps> = ({ incident }) => {
+export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, onDelete }) => {
   const formatDate = (dateStr: string) => {
     try {
       const d = new Date(dateStr);
@@ -20,7 +21,7 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({ incident }) => {
   };
 
   return (
-    <div className="glass-card-hover p-5 flex flex-col gap-4">
+    <div className="glass-card-hover p-5 flex flex-col gap-4 relative group">
       <div className="flex justify-between items-start gap-4">
         <div className="flex items-start gap-3">
           <div className={`p-2 rounded-lg mt-0.5 ${
@@ -87,12 +88,27 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({ incident }) => {
             </span>
           </div>
         )}
-        <Link 
-          to={`/incidents/${incident.id}`} 
-          className="text-xs font-semibold text-sky-400 hover:text-sky-300 transition-colors flex items-center gap-1 ml-auto"
-        >
-          Investigate <ShieldAlert size={14} />
-        </Link>
+        <div className="flex items-center gap-2 ml-auto">
+          <Link 
+            to={`/incidents/${incident.id}`} 
+            className="text-xs font-semibold text-sky-400 hover:text-sky-300 transition-colors flex items-center gap-1"
+          >
+            Investigate <ShieldAlert size={14} />
+          </Link>
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+              title="Delete incident"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
