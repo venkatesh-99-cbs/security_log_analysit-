@@ -21,7 +21,7 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, onDelete }
   };
 
   return (
-    <div className="glass-card-hover p-5 flex flex-col gap-4 relative group">
+    <article className="incident-card glass-card-hover p-5 flex flex-col gap-4 relative group">
       <div className="flex justify-between items-start gap-4">
         <div className="flex items-start gap-3">
           <div className={`p-2 rounded-lg mt-0.5 ${
@@ -110,6 +110,6 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, onDelete }
           )}
         </div>
       </div>
-    </div>
+    </article>
   );
 };

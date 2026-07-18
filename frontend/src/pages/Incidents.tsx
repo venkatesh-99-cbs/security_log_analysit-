@@ -43,9 +43,9 @@ const Incidents: React.FC = () => {
   }, {});
 
   return (
-    <div className="p-8 max-w-7xl mx-auto flex flex-col gap-8 animate-fade-in">
+    <div className="incident-page p-8 max-w-7xl mx-auto flex flex-col gap-8 animate-fade-in">
       {/* Page Header */}
-      <div className="flex justify-between items-center pb-4 border-b border-slate-900">
+      <div className="flex flex-wrap justify-between items-start gap-4 pb-4 border-b border-slate-900">
         <div>
           <h1 className="page-title flex items-center gap-2">
             <ShieldAlert className="text-red-400" size={24} />
@@ -140,7 +140,7 @@ const Incidents: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div className="queue-scroll-area flex flex-col gap-6 pr-2">
+        <div className="queue-scroll-area flex flex-col gap-6 pr-2 min-w-0">
           {Object.entries(groupedIncidents).map(([uploadKey, uploadIncidents], index) => {
             const first = uploadIncidents[0];
             return (
@@ -155,7 +155,7 @@ const Incidents: React.FC = () => {
                   </div>
                   <span className="incident-upload-count">{uploadIncidents.length} {uploadIncidents.length === 1 ? 'incident' : 'incidents'}</span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-5">
+                <div className="incident-card-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-5">
                   {uploadIncidents.map((incident) => (
                     <IncidentCard key={incident.id} incident={incident} onDelete={() => handleDeleteIndividual(incident.id, incident.title)} />
                   ))}

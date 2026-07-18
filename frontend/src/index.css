@@ -98,7 +98,7 @@
   .table tbody tr { @apply border-t border-slate-800/60 transition-colors duration-100; }
   .table tbody tr:hover { @apply bg-slate-800/30; }
   .table tbody td { @apply px-4 py-3 text-slate-300; }
-  .queue-scroll-area { max-height: min(68vh, 760px); overflow-y: auto; align-content: start; }
+  .queue-scroll-area { max-height: min(70vh, 820px); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; align-content: start; scrollbar-gutter: stable; }
   .audit-trail-panel { position: sticky; top: 1.5rem; max-height: calc(100vh - 3rem); min-height: 0; }
   .audit-log-scroll { min-height: 0; max-height: 52vh; overflow: auto; border-radius: 0.75rem; }
   .incident-upload-group { @apply glass-card overflow-hidden; }
@@ -107,6 +107,11 @@
   .incident-upload-kicker { @apply text-[10px] font-bold uppercase tracking-[0.18em] text-sky-400; }
   .incident-upload-title { @apply mt-0.5 text-sm font-semibold text-slate-200; }
   .incident-upload-count { @apply shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[10px] font-mono text-slate-400; }
+  .incident-card-grid { align-items: stretch; grid-auto-rows: minmax(0, 1fr); }
+  .incident-card { min-width: 0; height: 100%; overflow: hidden; transform: none !important; }
+  .incident-card:hover { transform: none !important; }
+  .incident-card h4, .incident-card p { min-width: 0; overflow-wrap: anywhere; }
+  .incident-card h4 { line-height: 1.3; }
 
   /* Page header */
   .page-header {
@@ -158,6 +163,7 @@
 }
 
 @media (max-width: 640px) {
+  .incident-page { padding: 1rem; gap: 1rem; }
   .incident-upload-heading { align-items: flex-start; padding: 0.875rem; }
   .incident-upload-heading .incident-upload-count { margin-top: 0.25rem; }
   .incident-upload-group > .grid { padding: 0.875rem; }
