@@ -280,13 +280,13 @@ The backend is configured via Pydantic settings defined in `backend/app/core/set
 SQLite serves as the relational database. Schema models are implemented in `backend/app/models/base.py` via SQLAlchemy.
 
 ### Entity-Relationship (ER) Diagram
-
 ```mermaid
 erDiagram
-    UploadedFile ||--o{ SecurityLog : "contains"
-    Incident ||--o{ MitreMapping : "maps to"
-    Incident ||--o{ AIAnalysis : "analyzes"
-    ChatHistory }|--|| ChatHistory : "session threads"
+    UploadedFile ||--o{ SecurityLog : contains
+    UploadedFile ||--o{ Incident : generates
+    Incident ||--o{ MitreMapping : maps_to
+    Incident ||--o{ AIAnalysis : analyzed_by
+    ChatSession ||--o{ ChatHistory : contains
 
     UploadedFile {
         int id PK
@@ -306,17 +306,16 @@ erDiagram
         string category
         string severity
         string message
-        json raw_data
     }
 
     Incident {
         int id PK
+        int upload_id FK
         string title
         string description
-        string status
         string severity
+        string status
         datetime created_at
-        datetime updated_at
     }
 
     MitreMapping {
@@ -332,20 +331,22 @@ erDiagram
         int incident_id FK
         string query
         string response
-        string analysis_type
+        datetime created_at
+    }
+
+    ChatSession {
+        string session_id PK
         datetime created_at
     }
 
     ChatHistory {
         int id PK
-        string session_id
+        string session_id FK
         string role
         string content
         datetime timestamp
     }
 ```
-
----
 
 ## 🤖 AI Copilot & RAG Workflow
 
